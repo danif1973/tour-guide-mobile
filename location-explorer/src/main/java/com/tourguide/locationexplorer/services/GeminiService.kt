@@ -3,6 +3,8 @@ package com.tourguide.locationexplorer.services
 import android.util.Log
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.GenerateContentResponse
+import com.google.ai.client.generativeai.type.SerializationException
+import com.google.ai.client.generativeai.type.ServerException
 import com.google.ai.client.generativeai.type.generationConfig
 import com.tourguide.locationexplorer.config.LocationExplorerConfig
 import kotlinx.coroutines.Dispatchers
@@ -236,47 +238,16 @@ class GeminiService(
         // Create prompt
         val promptText = createOsmSummaryPrompt(refinedOsm, maxSentences)
         
-        // Retry logic for 429 errors
-        val maxRetries = 2
-        var retryDelay = 5000L
-        
         var response: GenerateContentResponse? = null
         
-        for (attempt in 0..maxRetries) {
-            try {
-                response = model.generateContent(promptText)
-                break // Success
-            } catch (e: Exception) {
-                val errorStr = e.message ?: ""
-                if ("429" in errorStr || "Resource exhausted" in errorStr) {
-                    if (attempt < maxRetries) {
-                        Log.w(TAG, "Received 429 rate limit error (attempt ${attempt + 1}/${maxRetries + 1}). Waiting ${retryDelay}ms before retry...")
-                        delay(retryDelay)
-                        retryDelay += 2000
-                        continue
-                    } else {
-                        Log.e(TAG, "Gemini API rate limit error after ${maxRetries + 1} attempts: $errorStr")
-                        val name = tags["name:en"] ?: tags["name"] ?: "This place"
-                        return@withContext "$name is a point of interest in the area."
-                    }
-                } else {
-                    throw e
-                }
-            }
-        }
-        
-        if (response == null) {
-            Log.e(TAG, "Failed to generate content after retries")
-            val name = tags["name:en"] ?: tags["name"] ?: "This place"
-            return@withContext "$name is a point of interest in the area."
-        }
-        
         try {
+            response = model.generateContent(promptText)
             val text = response.text
+            
             if (text.isNullOrEmpty()) {
-                Log.e(TAG, "Gemini returned empty response")
-                val name = tags["name:en"] ?: tags["name"] ?: "This place"
-                return@withContext "$name is a point of interest in the area."
+                val finishReason = response.candidates.firstOrNull()?.finishReason?.name ?: "UNKNOWN"
+                Log.w(TAG, "Gemini returned empty response for $placeName. Reason: $finishReason")
+                return@withContext null
             }
             
             val content = fineTuneResponse(text.trim())
@@ -289,10 +260,18 @@ class GeminiService(
             
             Log.i(TAG, "Generated OSM summary successfully for $placeName: ${content.take(100)}...")
             return@withContext content
+            
+        } catch (e: SerializationException) {
+            val finishReason = response?.candidates?.firstOrNull()?.finishReason?.name ?: "NO_CANDIDATES"
+            val promptFeedback = response?.promptFeedback?.toString() ?: "NO_PROMPT_FEEDBACK"
+            Log.e(TAG, "Gemini summary failed for $placeName due to SerializationException. Finish reason: $finishReason. Prompt Feedback: $promptFeedback", e)
+            return@withContext null
+        } catch (e: ServerException) {
+            Log.e(TAG, "Gemini summary failed for $placeName due to a server error (e.g. API key issue).", e)
+            return@withContext null
         } catch (e: Exception) {
-            Log.e(TAG, "Gemini API error processing response: ${e.message}", e)
-            val name = tags["name:en"] ?: tags["name"] ?: "This place"
-            return@withContext "$name is a point of interest in the area."
+            Log.e(TAG, "Gemini summary failed for $placeName with a generic error.", e)
+            return@withContext null
         }
     }
 }

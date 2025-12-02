@@ -2,11 +2,17 @@ package com.tourguide.tourguideclient.ui
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -26,6 +32,20 @@ class TourGuideTestActivity : Activity() {
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100
+        const val ACTION_DEBUG_LOG = "com.tourguide.debug.LOG"
+    }
+
+    // Receiver for debug logs from services
+    private val debugReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_DEBUG_LOG) {
+                val tag = intent.getStringExtra("tag") ?: "Unknown"
+                val message = intent.getStringExtra("message") ?: ""
+                runOnUiThread {
+                    appendLog("[$tag] $message")
+                }
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,21 +82,27 @@ class TourGuideTestActivity : Activity() {
         }
 
         val startButton = Button(this).apply {
-            text = "Start Service"
+            text = "Start"
             setOnClickListener { startServiceWithPermissions() }
         }
 
         val stopButton = Button(this).apply {
-            text = "Stop Service"
+            text = "Stop"
             setOnClickListener { 
                 controller.stopService() 
                 statusTextView.text = "Status: Stopped"
                 appendLog("Service stop requested")
             }
         }
+        
+        val setLocationButton = Button(this).apply {
+            text = "Set Loc"
+            setOnClickListener { showLocationDialog() }
+        }
 
         buttonsLayout.addView(startButton)
         buttonsLayout.addView(stopButton)
+        buttonsLayout.addView(setLocationButton)
         rootLayout.addView(buttonsLayout)
 
         // Log ScrollView
@@ -96,6 +122,57 @@ class TourGuideTestActivity : Activity() {
         rootLayout.addView(scrollView)
 
         setContentView(rootLayout)
+        
+        // Register debug receiver
+        val filter = IntentFilter(ACTION_DEBUG_LOG)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(debugReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(debugReceiver, filter)
+        }
+    }
+    
+    private fun showLocationDialog() {
+        val context = this
+        val layout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 40, 50, 10)
+        }
+
+        val latInput = EditText(context).apply {
+            hint = "Latitude"
+            setText("48.2029") // Default: Googleplex
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+        }
+        
+        val lngInput = EditText(context).apply {
+            hint = "Longitude"
+            setText("16.3674") // Default: Googleplex
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+        }
+
+        layout.addView(TextView(context).apply { text = "Latitude:" })
+        layout.addView(latInput)
+        layout.addView(TextView(context).apply { text = "Longitude:" })
+        layout.addView(lngInput)
+
+        AlertDialog.Builder(context)
+            .setTitle("Set Location")
+            .setView(layout)
+            .setPositiveButton("Set") { _, _ ->
+                val latStr = latInput.text.toString()
+                val lngStr = lngInput.text.toString()
+                try {
+                    val lat = latStr.toDouble()
+                    val lng = lngStr.toDouble()
+                    controller.simulateLocation(lat, lng)
+                    appendLog("Location set to: $lat, $lng")
+                } catch (e: NumberFormatException) {
+                    Toast.makeText(context, "Invalid number format", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     override fun onStart() {
@@ -108,6 +185,15 @@ class TourGuideTestActivity : Activity() {
                     appendLog("• $item")
                 }
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(debugReceiver)
+        } catch (e: Exception) {
+            // Ignore
         }
     }
 

@@ -53,6 +53,18 @@ class TourGuideController(private val context: Context) {
         context.stopService(intent)
         Log.i(TAG, "Service stop request sent")
     }
+    
+    /**
+     * Simulate a location update (Manual Testing).
+     */
+    fun simulateLocation(lat: Double, lng: Double) {
+        val intent = Intent(TourGuideService.ACTION_SIMULATE_LOCATION)
+        intent.putExtra(TourGuideService.EXTRA_LAT, lat)
+        intent.putExtra(TourGuideService.EXTRA_LNG, lng)
+        intent.setPackage(context.packageName)
+        context.sendBroadcast(intent)
+        Log.i(TAG, "Simulate location request sent: $lat, $lng")
+    }
 
     /**
      * Register for content updates.

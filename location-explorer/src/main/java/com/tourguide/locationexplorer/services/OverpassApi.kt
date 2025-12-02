@@ -1,5 +1,6 @@
 package com.tourguide.locationexplorer.services
 
+import kotlinx.serialization.Serializable
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.POST
@@ -15,6 +16,7 @@ interface OverpassApi {
 /**
  * Overpass API response model.
  */
+@Serializable
 data class OverpassResponse(
     val version: Double? = null,
     val generator: String? = null,
@@ -24,6 +26,7 @@ data class OverpassResponse(
 /**
  * Overpass element (node, way, or relation).
  */
+@Serializable
 data class OverpassElement(
     val type: String,
     val id: Long,
@@ -36,9 +39,8 @@ data class OverpassElement(
 /**
  * Center coordinates for ways and relations.
  */
+@Serializable
 data class OverpassCenter(
     val lat: Double,
     val lon: Double
 )
-
-

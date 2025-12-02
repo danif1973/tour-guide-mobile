@@ -6,10 +6,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.location.Location
+import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
@@ -28,6 +32,7 @@ import com.tourguide.locationexplorer.services.OverpassService
 import com.tourguide.locationexplorer.services.TtsService
 import com.tourguide.tourguideclient.TourGuideClient
 import com.tourguide.tourguideclient.config.TourGuideClientConfig
+import com.tourguide.tourguideclient.ui.TourGuideTestActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -48,6 +53,11 @@ class TourGuideService : Service() {
         // Broadcast Action
         const val ACTION_TOUR_GUIDE_CONTENT = "com.tourguide.tourguideclient.ACTION_CONTENT"
         const val EXTRA_CONTENT_TEXT = "extra_content_text"
+        
+        // Manual Location Action
+        const val ACTION_SIMULATE_LOCATION = "com.tourguide.tourguideclient.SIMULATE_LOCATION"
+        const val EXTRA_LAT = "extra_lat"
+        const val EXTRA_LNG = "extra_lng"
     }
 
     private lateinit var tourGuideClient: TourGuideClient
@@ -57,6 +67,32 @@ class TourGuideService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
     private var lastSpeedKmh: Float = 0f
+    
+    // Manual location receiver
+    private val simulationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_SIMULATE_LOCATION) {
+                val lat = intent.getDoubleExtra(EXTRA_LAT, 0.0)
+                val lng = intent.getDoubleExtra(EXTRA_LNG, 0.0)
+                
+                if (lat != 0.0 && lng != 0.0) {
+                    Log.i(TAG, "Received manual location simulation: $lat, $lng")
+                    broadcastDebug("TourGuideService", "Simulating location: $lat, $lng")
+                    
+                    val location = Location("manual_simulation").apply {
+                        latitude = lat
+                        longitude = lng
+                        time = System.currentTimeMillis()
+                        accuracy = 10.0f
+                        // Simulate movement speed if needed, or leave 0
+                        speed = 50.0f / 3.6f // Simulate ~50km/h for testing
+                        bearing = 0.0f
+                    }
+                    handleLocation(location)
+                }
+            }
+        }
+    }
 
     // Location Callback
     private val locationCallback = object : LocationCallback() {
@@ -69,6 +105,7 @@ class TourGuideService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        broadcastDebug("TourGuideService", "Creating TourGuideService")
         Log.i(TAG, "Creating TourGuideService")
 
         // 1. Initialize Services
@@ -79,8 +116,10 @@ class TourGuideService : Service() {
         ttsService.initialize(this) { success ->
             if (success) {
                 Log.i(TAG, "TTS Service initialized successfully")
+                broadcastDebug("TourGuideService", "TTS Service initialized")
             } else {
                 Log.e(TAG, "TTS Service initialization failed")
+                broadcastDebug("TourGuideService", "TTS Service initialization failed")
             }
         }
 
@@ -95,14 +134,35 @@ class TourGuideService : Service() {
 
         // 3. Create Notification Channel
         createNotificationChannel()
+        
+        // 4. Register Simulation Receiver
+        val filter = IntentFilter(ACTION_SIMULATE_LOCATION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(simulationReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(simulationReceiver, filter)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "Starting TourGuideService")
+        broadcastDebug("TourGuideService", "Starting TourGuideService")
 
         // 1. Start Foreground
         val notification = createNotification()
-        startForeground(NOTIFICATION_ID, notification)
+        
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start foreground service", e)
+            broadcastDebug("TourGuideService", "Failed to start foreground: ${e.message}")
+            // If we can't go foreground, we might be killed, but let's try to proceed anyway
+            // or consider stopSelf()
+        }
 
         // 2. Start TourGuideClient
         tourGuideClient.start()
@@ -116,8 +176,14 @@ class TourGuideService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "Destroying TourGuideService")
+        broadcastDebug("TourGuideService", "Destroying TourGuideService")
         
         // Cleanup
+        try {
+            unregisterReceiver(simulationReceiver)
+        } catch (e: Exception) {
+            // Ignore
+        }
         stopLocationUpdates()
         tourGuideClient.stop()
         ttsService.shutdown()
@@ -138,6 +204,7 @@ class TourGuideService : Service() {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             Log.e(TAG, "Location permissions missing, stopping service")
+            broadcastDebug("TourGuideService", "Location permissions missing")
             stopSelf()
             return
         }
@@ -153,6 +220,7 @@ class TourGuideService : Service() {
             Looper.getMainLooper()
         )
         Log.i(TAG, "Location updates started")
+        broadcastDebug("TourGuideService", "Location updates started")
     }
 
     private fun stopLocationUpdates() {
@@ -169,6 +237,8 @@ class TourGuideService : Service() {
             }
             lastSpeedKmh = speed
 
+            broadcastDebug("TourGuideService", "Location: ${location.latitude}, ${location.longitude}")
+
             // Feed Client
             tourGuideClient.handleLocationUpdate(
                 location = location,
@@ -181,29 +251,10 @@ class TourGuideService : Service() {
             
             if (response.status == 1) { // Success
                 Log.i(TAG, "New content generated. Audio items: ${response.audio.size}")
+                broadcastDebug("TourGuideService", "New content generated. Audio items: ${response.audio.size}")
                 
                 // 1. Play Audio (Service responsibility)
                 if (response.audio.isNotEmpty()) {
-                     // Note: The TourGuideClient currently returns base64 strings.
-                     // AndroidTtsService.speak() takes text.
-                     //
-                     // Issue: The Client generates audio via TtsService internally 
-                     // and returns the base64. But here we want to PLAY it.
-                     //
-                     // Refined Approach:
-                     // Since the Client ALREADY called ttsService.generateAudio(),
-                     // we might have raw bytes if we changed TtsService. 
-                     // But currently AndroidTtsService.generateAudio returns null/logs warning.
-                     //
-                     // Correction:
-                     // Android TTS works by "speak()". It doesn't easily give bytes.
-                     // TourGuideClient logic calls `ttsService?.generateAudio(summary)`.
-                     // Inside `AndroidTtsService`, `generateAudio` is currently a stub returning null!
-                     //
-                     // FIX: We should simply use the TEXT content here to trigger `speak()`.
-                     // We don't need to decode the base64 audio from the response because
-                     // `AndroidTtsService` can just speak the text directly.
-                     
                      response.content.forEach { textSummary ->
                          ttsService.speak(textSummary)
                      }
@@ -220,6 +271,14 @@ class TourGuideService : Service() {
                 }
             }
         }
+    }
+    
+    private fun broadcastDebug(tag: String, message: String) {
+        val intent = Intent(TourGuideTestActivity.ACTION_DEBUG_LOG)
+        intent.putExtra("tag", tag)
+        intent.putExtra("message", message)
+        intent.setPackage(packageName)
+        sendBroadcast(intent)
     }
 
     private fun createNotificationChannel() {

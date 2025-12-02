@@ -97,24 +97,24 @@ class TourGuideClient(
             return
         }
         
-        val lastContentLoc = lastContentLocation ?: run {
-            // No previous content location - set baseline
-            lastContentLocation = location
-            return
+        val lastContentLoc = lastContentLocation
+        if (lastContentLoc != null) {
+            // Standard behavior: check distance
+            val distance = location.distanceTo(lastContentLoc)
+            val thresholdM = config.contentGenerationDistanceThresholdM.toFloat()
+            
+            // Adjust threshold based on speed
+            val speedMultiplier = speedKmh / config.speedReferenceBaseline
+            val adjustedThreshold = thresholdM * speedMultiplier
+            
+            if (distance < adjustedThreshold) {
+                return // Not enough movement
+            }
+            Log.i(TAG, "Distance threshold met ($distance m >= $adjustedThreshold m, speed: $speedKmh km/h). Generating content.")
+        } else {
+            // First run behavior: generate immediately
+            Log.i(TAG, "First location update. Generating content immediately.")
         }
-        
-        val distance = location.distanceTo(lastContentLoc)
-        val thresholdM = config.contentGenerationDistanceThresholdM.toFloat()
-        
-        // Adjust threshold based on speed
-        val speedMultiplier = speedKmh / config.speedReferenceBaseline
-        val adjustedThreshold = thresholdM * speedMultiplier
-        
-        if (distance < adjustedThreshold) {
-            return // Not enough movement
-        }
-        
-        Log.i(TAG, "Distance threshold met ($distance m >= $adjustedThreshold m, speed: $speedKmh km/h). Generating content.")
         
         // Generate destination summary if needed
         if (!destinationSummaryGenerated && destination != null) {
@@ -211,54 +211,50 @@ class TourGuideClient(
                         "place_rank" to place.rank
                     )
                     
-                    // Add relative direction if heading is available
-                    if (heading != null && heading != 0f) {
-                        val relativeDirection = calculateRelativeDirection(
-                            location.latitude,
-                            location.longitude,
-                            heading,
-                            place.lat,
-                            place.lng
-                        )
-                        val placeMapWithDirection = placeMap.toMutableMap()
-                        placeMapWithDirection["relative_direction"] = relativeDirection
-                        
-                        val summary = geminiService.generateOsmSummary(
-                            placeMapWithDirection,
-                            maxSentences = maxSentences
-                        )
-                        
-                        if (summary != null) {
-                            summaries.add(summary)
+                    var summary: String? = null
+                    
+                    // Wrap Gemini call in try-catch to handle serialization errors or API issues
+                    try {
+                        // Add relative direction if heading is available
+                        if (heading != null && heading != 0f) {
+                            val relativeDirection = calculateRelativeDirection(
+                                location.latitude,
+                                location.longitude,
+                                heading,
+                                place.lat,
+                                place.lng
+                            )
+                            val placeMapWithDirection = placeMap.toMutableMap()
+                            placeMapWithDirection["relative_direction"] = relativeDirection
                             
-                            // Generate audio
-                            val audio = ttsService?.generateAudio(summary)
-                            audioList.add(audio?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) })
-                            
-                            Log.d(TAG, "[${index + 1}/${places.size}] Generated summary for: $placeName")
+                            summary = geminiService.generateOsmSummary(
+                                placeMapWithDirection,
+                                maxSentences = maxSentences
+                            )
                         } else {
-                            Log.i(TAG, "[${index + 1}/${places.size}] Skipped $placeName: insufficient information")
+                            summary = geminiService.generateOsmSummary(
+                                placeMap,
+                                maxSentences = maxSentences
+                            )
                         }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "[${index + 1}/${places.size}] Failed to generate summary for $placeName: ${e.message}", e)
+                        // Continue to next place instead of crashing entire loop
+                    }
+                    
+                    if (summary != null) {
+                        summaries.add(summary)
+                        
+                        // Generate audio
+                        val audio = ttsService?.generateAudio(summary)
+                        audioList.add(audio?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) })
+                        
+                        Log.d(TAG, "[${index + 1}/${places.size}] Generated summary for: $placeName")
                     } else {
-                        val summary = geminiService.generateOsmSummary(
-                            placeMap,
-                            maxSentences = maxSentences
-                        )
-                        
-                        if (summary != null) {
-                            summaries.add(summary)
-                            
-                            // Generate audio
-                            val audio = ttsService?.generateAudio(summary)
-                            audioList.add(audio?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) })
-                            
-                            Log.d(TAG, "[${index + 1}/${places.size}] Generated summary for: $placeName")
-                        } else {
-                            Log.i(TAG, "[${index + 1}/${places.size}] Skipped $placeName: insufficient information")
-                        }
+                        Log.i(TAG, "[${index + 1}/${places.size}] Skipped $placeName: insufficient information or generation failed")
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "[${index + 1}/${places.size}] Failed to generate summary for $placeName: ${e.message}", e)
+                    Log.e(TAG, "[${index + 1}/${places.size}] Failed to process place $placeName: ${e.message}", e)
                 }
             }
             
@@ -511,5 +507,3 @@ class TourGuideClient(
         Log.i(TAG, "Tour guide client stopped")
     }
 }
-
-

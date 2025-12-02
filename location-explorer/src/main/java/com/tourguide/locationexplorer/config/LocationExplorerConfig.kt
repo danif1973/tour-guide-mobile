@@ -1,6 +1,7 @@
 package com.tourguide.locationexplorer.config
 
 import android.util.Log
+import com.tourguide.locationexplorer.BuildConfig
 
 /**
  * Configuration settings for Location Explorer.
@@ -10,13 +11,13 @@ object LocationExplorerConfig {
     private const val TAG = "LocationExplorerConfig"
     
     // Gemini API Configuration
-    var geminiApiKey: String? = "AIzaSyDNjNsHmNutkGnm2HmcHZcRa1PIxU2jj5c"
+    var geminiApiKey: String? = null
         set(value) {
             field = value
             Log.i(TAG, "GEMINI_API_KEY: ${if (value != null) "SET" else "NOT SET"}")
         }
     
-    var geminiModel: String = "gemini-2.5-flash"
+    var geminiModel: String = "gemini-2.0-flash"
         set(value) {
             field = value
             Log.i(TAG, "GEMINI_MODEL: $value")
@@ -126,7 +127,7 @@ object LocationExplorerConfig {
     var maxNominatimCalls: Int = 20
     
     // Skip Nominatim calls for testing (uses OSM promise score only)
-    var skipNominatimCalls: Boolean = false
+    var skipNominatimCalls: Boolean = true
     
     // Place Types to Search
     val tourismTypes: List<String> = listOf(
@@ -158,6 +159,19 @@ object LocationExplorerConfig {
     var placeHistoryTtl: Int = 86400 // 24 hours default
     var enablePlaceHistory: Boolean = true
     
+    init {
+        // Try to load API key from BuildConfig if available
+        try {
+            val key = BuildConfig.GEMINI_API_KEY.toString()
+            if (key.isNotBlank() && key != "null") {
+                geminiApiKey = key
+            }
+        } catch (e: Throwable) {
+            // BuildConfig might not be generated yet or not accessible
+            Log.w(TAG, "Could not load API key from BuildConfig")
+        }
+    }
+    
     /**
      * Initialize configuration with API key.
      * This should be called before using any services.
@@ -181,5 +195,3 @@ object LocationExplorerConfig {
         Log.i(TAG, "Configuration validation passed")
     }
 }
-
-

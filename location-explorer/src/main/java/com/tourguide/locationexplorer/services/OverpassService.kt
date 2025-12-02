@@ -12,8 +12,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 import kotlin.math.*
 
@@ -47,7 +45,6 @@ class OverpassService(
         const val IMAGE_SCORE = 0.05f
     }
     
-    private val overpassApi: OverpassApi
     private val okHttpClient: OkHttpClient
     private val json = Json { ignoreUnknownKeys = true }
     
@@ -60,14 +57,6 @@ class OverpassService(
             .readTimeout(config.overpassTimeout.toLong(), TimeUnit.SECONDS)
             .writeTimeout(config.overpassTimeout.toLong(), TimeUnit.SECONDS)
             .build()
-        
-        val retrofit = Retrofit.Builder()
-            .baseUrl(config.overpassApiUrl)
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-        
-        overpassApi = retrofit.create(OverpassApi::class.java)
         
         Log.d(TAG, "Initialized Overpass service with API URL: ${config.overpassApiUrl}")
     }

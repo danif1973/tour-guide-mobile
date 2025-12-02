@@ -17,5 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "TourGuide"
 include(":location-explorer")
 include(":tour-guide-client")
-
-
+include(":app")
