@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -16,16 +15,17 @@ import android.location.Location
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.tourguide.locationexplorer.config.LocationExplorerConfig
 import com.tourguide.locationexplorer.services.AndroidTtsService
 import com.tourguide.locationexplorer.services.GeminiService
 import com.tourguide.locationexplorer.services.OverpassService
@@ -137,11 +137,7 @@ class TourGuideService : Service() {
         
         // 4. Register Simulation Receiver
         val filter = IntentFilter(ACTION_SIMULATE_LOCATION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(simulationReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(simulationReceiver, filter)
-        }
+        ContextCompat.registerReceiver(this, simulationReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -160,8 +156,6 @@ class TourGuideService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start foreground service", e)
             broadcastDebug("TourGuideService", "Failed to start foreground: ${e.message}")
-            // If we can't go foreground, we might be killed, but let's try to proceed anyway
-            // or consider stopSelf()
         }
 
         // 2. Start TourGuideClient
@@ -229,43 +223,36 @@ class TourGuideService : Service() {
 
     private fun handleLocation(location: Location) {
         serviceScope.launch {
-            // Calculate Speed (if not available from GPS)
             val speed = if (location.hasSpeed()) {
                 location.speed * 3.6f // Convert m/s to km/h
             } else {
-                lastSpeedKmh // Fallback or calculated if we stored prev location
+                lastSpeedKmh
             }
             lastSpeedKmh = speed
 
             broadcastDebug("TourGuideService", "Location: ${location.latitude}, ${location.longitude}")
 
-            // Feed Client
             tourGuideClient.handleLocationUpdate(
                 location = location,
                 speedKmh = speed,
                 headingDegrees = if (location.hasBearing()) location.bearing else null
             )
 
-            // Check for new content
             val response = tourGuideClient.getContent()
             
             if (response.status == 1) { // Success
                 Log.i(TAG, "New content generated. Audio items: ${response.audio.size}")
                 broadcastDebug("TourGuideService", "New content generated. Audio items: ${response.audio.size}")
                 
-                // 1. Play Audio (Service responsibility)
-                if (response.audio.isNotEmpty()) {
-                     response.content.forEach { textSummary ->
-                         ttsService.speak(textSummary)
-                     }
+                // Play audio for the new content in the correct order
+                response.content.forEachIndexed { index, text ->
+                    // The AndroidTtsService will handle the queuing logic
+                    (ttsService as? AndroidTtsService)?.speak(text, if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD)
                 }
 
-                // 2. Broadcast Text (UI responsibility)
                 if (response.content.isNotEmpty()) {
                     val broadcastIntent = Intent(ACTION_TOUR_GUIDE_CONTENT)
                     broadcastIntent.putStringArrayListExtra(EXTRA_CONTENT_TEXT, ArrayList(response.content))
-                    // Using standard broadcast (LocalBroadcastManager is deprecated)
-                    // Package restriction ensures security
                     broadcastIntent.setPackage(packageName)
                     sendBroadcast(broadcastIntent)
                 }
@@ -282,21 +269,20 @@ class TourGuideService : Service() {
     }
 
     private fun createNotificationChannel() {
-        val name = "Tour Guide Service"
-        val descriptionText = "Active tour guide location tracking"
-        val importance = NotificationManager.IMPORTANCE_LOW
-        val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance).apply {
-            description = descriptionText
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Tour Guide Service"
+            val descriptionText = "Active tour guide location tracking"
+            val importance = NotificationManager.IMPORTANCE_LOW
+            val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance).apply {
+                description = descriptionText
+            }
+            val notificationManager: NotificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
         }
-        val notificationManager: NotificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(channel)
     }
 
     private fun createNotification(): Notification {
-        // PendingIntent for notification tap (optional, can launch main activity)
-        // val pendingIntent: PendingIntent = ...
-
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Tour Guide Active")
             .setContentText("Monitoring location for tour highlights...")

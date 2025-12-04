@@ -8,8 +8,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -17,25 +20,24 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.android.material.switchmaterial.SwitchMaterial
+import com.tourguide.tourguideclient.services.TourGuideService
 
-/**
- * A simple test activity to demonstrate the TourGuideController and Service.
- * It creates a programmatic UI to avoid dependency on XML resources in this library module.
- */
-class TourGuideTestActivity : Activity() {
+class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppCompatActivity for Material components
 
     private lateinit var controller: TourGuideController
     private lateinit var logTextView: TextView
-    private lateinit var statusTextView: TextView
+    private lateinit var contentTextView: TextView
+    private lateinit var toggleSwitch: SwitchMaterial
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100
         const val ACTION_DEBUG_LOG = "com.tourguide.debug.LOG"
     }
 
-    // Receiver for debug logs from services
     private val debugReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_DEBUG_LOG) {
@@ -50,86 +52,86 @@ class TourGuideTestActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Initialize Controller
         controller = TourGuideController(this)
 
-        // Create UI Programmatically
+        // --- UI SETUP ---
         val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             setPadding(32, 32, 32, 32)
         }
 
-        // Status Text
-        statusTextView = TextView(this).apply {
-            text = "Status: Stopped"
-            textSize = 18f
-            setPadding(0, 0, 0, 24)
-        }
-        rootLayout.addView(statusTextView)
-
-        // Buttons Layout
         val buttonsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            gravity = android.view.Gravity.CENTER_VERTICAL
         }
 
-        val startButton = Button(this).apply {
-            text = "Start"
-            setOnClickListener { startServiceWithPermissions() }
-        }
-
-        val stopButton = Button(this).apply {
-            text = "Stop"
-            setOnClickListener { 
-                controller.stopService() 
-                statusTextView.text = "Status: Stopped"
-                appendLog("Service stop requested")
-            }
+        toggleSwitch = SwitchMaterial(this).apply {
+            text = ""
         }
         
         val setLocationButton = Button(this).apply {
             text = "Set Loc"
+            textSize = 12f
+            minHeight = 0
+            minimumHeight = 0
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(30, 15, 30, 15)
             setOnClickListener { showLocationDialog() }
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                marginStart = 32
+            }
         }
-
-        buttonsLayout.addView(startButton)
-        buttonsLayout.addView(stopButton)
+        buttonsLayout.addView(toggleSwitch)
         buttonsLayout.addView(setLocationButton)
         rootLayout.addView(buttonsLayout)
 
-        // Log ScrollView
-        val scrollView = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            )
-            setPadding(0, 24, 0, 0)
+        // --- CONTENT TEXT VIEW ---
+        val contentScrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f) // Takes up half the space
+            setBackgroundColor(Color.BLACK)
         }
+        contentTextView = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            setPadding(16, 16, 16, 16)
+            typeface = Typeface.MONOSPACE
+        }
+        contentScrollView.addView(contentTextView)
+        rootLayout.addView(contentScrollView)
 
-        logTextView = TextView(this).apply {
-            text = "Waiting for content...\n"
-            textSize = 14f
+        // --- DIVIDER ---
+        val divider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 2).apply {
+                topMargin = 8
+                bottomMargin = 8
+            }
+            setBackgroundColor(Color.GRAY)
         }
-        scrollView.addView(logTextView)
-        rootLayout.addView(scrollView)
+        rootLayout.addView(divider)
+
+        // --- LOG TEXT VIEW ---
+        val logScrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f) // Takes up the other half
+            setBackgroundColor(Color.BLACK)
+        }
+        logTextView = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Color.GREEN)
+            setPadding(16, 16, 16, 16)
+            typeface = Typeface.MONOSPACE
+        }
+        logScrollView.addView(logTextView)
+        rootLayout.addView(logScrollView)
 
         setContentView(rootLayout)
         
-        // Register debug receiver
         val filter = IntentFilter(ACTION_DEBUG_LOG)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(debugReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(debugReceiver, filter)
-        }
+        ContextCompat.registerReceiver(this, debugReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        
+        appendLog("Activity created. Waiting for service to start...")
     }
     
     private fun showLocationDialog() {
@@ -138,19 +140,16 @@ class TourGuideTestActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(50, 40, 50, 10)
         }
-
         val latInput = EditText(context).apply {
             hint = "Latitude"
-            setText("48.2029") // Default: Googleplex
+            setText("48.2082") // Default: Vienna
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
         }
-        
         val lngInput = EditText(context).apply {
             hint = "Longitude"
-            setText("16.3674") // Default: Googleplex
+            setText("16.3738") // Default: Vienna
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
         }
-
         layout.addView(TextView(context).apply { text = "Latitude:" })
         layout.addView(latInput)
         layout.addView(TextView(context).apply { text = "Longitude:" })
@@ -160,15 +159,13 @@ class TourGuideTestActivity : Activity() {
             .setTitle("Set Location")
             .setView(layout)
             .setPositiveButton("Set") { _, _ ->
-                val latStr = latInput.text.toString()
-                val lngStr = lngInput.text.toString()
                 try {
-                    val lat = latStr.toDouble()
-                    val lng = lngStr.toDouble()
+                    val lat = latInput.text.toString().toDouble()
+                    val lng = lngInput.text.toString().toDouble()
                     controller.simulateLocation(lat, lng)
-                    appendLog("Location set to: $lat, $lng")
+                    appendLog("-> Simulation request sent for: $lat, $lng")
                 } catch (e: NumberFormatException) {
-                    Toast.makeText(context, "Invalid number format", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Invalid coordinates", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -177,12 +174,27 @@ class TourGuideTestActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        // Register for updates
+        
+        // Check service state and update switch
+        val isRunning = isServiceRunning(TourGuideService::class.java)
+        toggleSwitch.isChecked = isRunning
+        
+        // Set listener AFTER updating state to avoid triggering it
+        toggleSwitch.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                startServiceWithPermissions()
+            } else {
+                controller.stopService()
+                appendLog("Service stop requested")
+            }
+        }
+
         controller.register { contentList ->
             runOnUiThread {
-                statusTextView.text = "Status: Active (Content Received)"
+                contentTextView.text = ""
+                // Removed .reversed() to fix ordering issue
                 contentList.forEach { item ->
-                    appendLog("• $item")
+                    appendContent("• $item")
                 }
             }
         }
@@ -199,8 +211,20 @@ class TourGuideTestActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
-        // Unregister updates (but Service keeps running if started)
         controller.unregister()
+        // Remove listener to avoid memory leaks or unwanted triggers if view is kept
+        toggleSwitch.setOnCheckedChangeListener(null)
+    }
+    
+    @Suppress("DEPRECATION")
+    private fun isServiceRunning(serviceClass: Class<*>): Boolean {
+        val manager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        for (service in manager.getRunningServices(Int.MAX_VALUE)) {
+            if (serviceClass.name == service.service.className) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun startServiceWithPermissions() {
@@ -213,16 +237,12 @@ class TourGuideTestActivity : Activity() {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-        val missingPermissions = permissions.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
-
-        if (missingPermissions.isEmpty()) {
+        if (permissions.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
             controller.startService()
-            statusTextView.text = "Status: Running"
             appendLog("Service start requested")
+            // No need to set text on switch
         } else {
-            ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), PERMISSION_REQUEST_CODE)
+            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
         }
     }
 
@@ -231,20 +251,25 @@ class TourGuideTestActivity : Activity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_CODE) {
             if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
                 controller.startService()
-                statusTextView.text = "Status: Running"
                 appendLog("Permissions granted. Service starting...")
+                toggleSwitch.isChecked = true // Ensure switch reflects state
             } else {
                 Toast.makeText(this, "Permissions required to run Tour Guide", Toast.LENGTH_LONG).show()
                 appendLog("Permissions denied.")
+                toggleSwitch.isChecked = false
             }
         }
     }
 
     private fun appendLog(text: String) {
-        val currentText = logTextView.text.toString()
-        logTextView.text = "$text\n\n$currentText"
+        logTextView.append("$text\n")
+    }
+    
+    private fun appendContent(text: String) {
+        contentTextView.append("$text\n\n")
     }
 }

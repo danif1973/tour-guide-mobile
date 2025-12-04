@@ -17,18 +17,28 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "ENABLE_LOGGING", "true")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            buildConfigField("boolean", "ENABLE_LOGGING", "false")
         }
     }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     kotlinOptions {
         jvmTarget = "17"
     }
@@ -37,6 +47,12 @@ android {
 dependencies {
     implementation(project(":location-explorer"))
     
+    // Material Components
+    implementation("com.google.android.material:material:1.11.0")
+    
+    // AppCompat (Required for AppCompatActivity)
+    implementation("androidx.appcompat:appcompat:1.6.1")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     
