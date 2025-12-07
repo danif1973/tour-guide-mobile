@@ -207,6 +207,7 @@ class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppComp
         } catch (e: Exception) {
             // Ignore
         }
+        controller.stopService()
     }
 
     override fun onStop() {

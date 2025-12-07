@@ -33,11 +33,13 @@ import com.tourguide.locationexplorer.services.TtsService
 import com.tourguide.tourguideclient.TourGuideClient
 import com.tourguide.tourguideclient.config.TourGuideClientConfig
 import com.tourguide.tourguideclient.ui.TourGuideTestActivity
+import com.tourguide.tourguideclient.utils.broadcastDebug
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Tour Guide Service - Foreground Service that drives the TourGuideClient.
@@ -67,6 +69,7 @@ class TourGuideService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
     private var lastSpeedKmh: Float = 0f
+    private val isProcessingSimulation = AtomicBoolean(false)
     
     // Manual location receiver
     private val simulationReceiver = object : BroadcastReceiver() {
@@ -88,7 +91,8 @@ class TourGuideService : Service() {
                         speed = 50.0f / 3.6f // Simulate ~50km/h for testing
                         bearing = 0.0f
                     }
-                    handleLocation(location)
+                    isProcessingSimulation.set(true)
+                    handleLocation(location, isSimulation = true)
                 }
             }
         }
@@ -97,6 +101,10 @@ class TourGuideService : Service() {
     // Location Callback
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(locationResult: LocationResult) {
+            if (isProcessingSimulation.get()) {
+                Log.d(TAG, "Skipping GPS update due to active simulation")
+                return
+            }
             for (location in locationResult.locations) {
                 handleLocation(location)
             }
@@ -124,6 +132,7 @@ class TourGuideService : Service() {
         }
 
         tourGuideClient = TourGuideClient(
+            context = this,
             overpassService = overpassService,
             geminiService = geminiService,
             ttsService = ttsService
@@ -203,6 +212,15 @@ class TourGuideService : Service() {
             return
         }
 
+        // Immediately request the last known location for a quick start
+        fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
+            if (location != null) {
+                Log.i(TAG, "Got last known location: ${location.latitude}, ${location.longitude}")
+                broadcastDebug("TourGuideService", "Got last known location: ${location.latitude}, ${location.longitude}")
+                handleLocation(location)
+            }
+        }
+
         val locationRequest = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
             TourGuideClientConfig.locationPollingIntervalMs
@@ -213,59 +231,60 @@ class TourGuideService : Service() {
             locationCallback,
             Looper.getMainLooper()
         )
-        Log.i(TAG, "Location updates started")
-        broadcastDebug("TourGuideService", "Location updates started")
+        Log.i(TAG, "Periodic location updates started")
+        broadcastDebug("TourGuideService", "Periodic location updates started")
     }
 
     private fun stopLocationUpdates() {
         fusedLocationClient.removeLocationUpdates(locationCallback)
     }
 
-    private fun handleLocation(location: Location) {
+    private fun handleLocation(location: Location, isSimulation: Boolean = false) {
         serviceScope.launch {
-            val speed = if (location.hasSpeed()) {
-                location.speed * 3.6f // Convert m/s to km/h
-            } else {
-                lastSpeedKmh
-            }
-            lastSpeedKmh = speed
-
-            broadcastDebug("TourGuideService", "Location: ${location.latitude}, ${location.longitude}")
-
-            tourGuideClient.handleLocationUpdate(
-                location = location,
-                speedKmh = speed,
-                headingDegrees = if (location.hasBearing()) location.bearing else null
-            )
-
-            val response = tourGuideClient.getContent()
-            
-            if (response.status == 1) { // Success
-                Log.i(TAG, "New content generated. Audio items: ${response.audio.size}")
-                broadcastDebug("TourGuideService", "New content generated. Audio items: ${response.audio.size}")
-                
-                // Play audio for the new content in the correct order
-                response.content.forEachIndexed { index, text ->
-                    // The AndroidTtsService will handle the queuing logic
-                    (ttsService as? AndroidTtsService)?.speak(text, if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD)
+            try {
+                val speed = if (location.hasSpeed()) {
+                    location.speed * 3.6f // Convert m/s to km/h
+                } else {
+                    lastSpeedKmh
                 }
+                lastSpeedKmh = speed
+                tourGuideClient.handleLocationUpdate(
+                    location = location,
+                    speedKmh = speed,
+                    headingDegrees = if (location.hasBearing()) location.bearing else null
+                )
 
-                if (response.content.isNotEmpty()) {
-                    val broadcastIntent = Intent(ACTION_TOUR_GUIDE_CONTENT)
-                    broadcastIntent.putStringArrayListExtra(EXTRA_CONTENT_TEXT, ArrayList(response.content))
-                    broadcastIntent.setPackage(packageName)
-                    sendBroadcast(broadcastIntent)
+                val response = tourGuideClient.getContent()
+
+                if (response.status == 1) { // Success
+                    Log.i(TAG, "New content generated. Audio items: ${response.audio.size}")
+                    broadcastDebug("TourGuideService", "New content generated. Audio items: ${response.audio.size}")
+
+                    // Play audio for the new content in the correct order
+                    response.content.forEachIndexed { index, text ->
+                        // The AndroidTtsService will handle the queuing logic
+                        (ttsService as? AndroidTtsService)?.speak(
+                            text,
+                            if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                        )
+                    }
+
+                    if (response.content.isNotEmpty()) {
+                        val broadcastIntent = Intent(ACTION_TOUR_GUIDE_CONTENT)
+                        broadcastIntent.putStringArrayListExtra(EXTRA_CONTENT_TEXT, ArrayList(response.content))
+                        broadcastIntent.setPackage(packageName)
+                        sendBroadcast(broadcastIntent)
+                    }
+                }
+            } finally {
+                if (isSimulation) {
+                    // It's critical to reset the client's state BEFORE allowing GPS updates again.
+                    tourGuideClient.resetLocationState()
+                    isProcessingSimulation.set(false)
+                    Log.d(TAG, "Simulation processing complete, resuming GPS")
                 }
             }
         }
-    }
-    
-    private fun broadcastDebug(tag: String, message: String) {
-        val intent = Intent(TourGuideTestActivity.ACTION_DEBUG_LOG)
-        intent.putExtra("tag", tag)
-        intent.putExtra("message", message)
-        intent.setPackage(packageName)
-        sendBroadcast(intent)
     }
 
     private fun createNotificationChannel() {

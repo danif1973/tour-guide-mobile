@@ -106,13 +106,13 @@ object LocationExplorerConfig {
     var placeRankThreshold: Int = 30
     
     // Importance threshold: Nominatim importance score (0.0-1.0, higher = more important)
-    var importanceThreshold: Float = 0.5f
+    var importanceThreshold: Float = 0.29f
     
     // Maximum number of places to return (after filtering)
     var maxResults: Int = 10
     
     // Default search radius in meters for searching places near a location
-    var defaultQueryRadiusM: Int = 800
+    var defaultQueryRadiusM: Int = 500
     
     // Maximum search radius in meters (for progressive expansion when no results found)
     var maxRadiusM: Int = 5000

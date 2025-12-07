@@ -1,14 +1,15 @@
 package com.tourguide.tourguideclient
 
+import android.content.Context
 import android.location.Location
 import android.util.Log
 import com.tourguide.locationexplorer.config.LocationExplorerConfig
-import com.tourguide.locationexplorer.models.PlaceInfo
 import com.tourguide.locationexplorer.services.GeminiService
 import com.tourguide.locationexplorer.services.OverpassService
 import com.tourguide.locationexplorer.services.TtsService
 import com.tourguide.tourguideclient.config.TourGuideClientConfig
 import com.tourguide.tourguideclient.models.ContentResponse
+import com.tourguide.tourguideclient.utils.broadcastDebug
 import kotlinx.coroutines.*
 import kotlin.math.*
 
@@ -20,6 +21,7 @@ import kotlin.math.*
  * from Android Location Services, rather than polling a REST API.
  */
 class TourGuideClient(
+    private val context: Context,
     private val overpassService: OverpassService,
     private val geminiService: GeminiService,
     private val ttsService: TtsService? = null,
@@ -48,7 +50,17 @@ class TourGuideClient(
     private var currentData: Map<String, Any> = emptyMap()
     
     private val clientScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    
+
+    /**
+     * Resets the last known location, forcing the next GPS update to be processed.
+     */
+    fun resetLocationState() {
+        Log.d(TAG, "Resetting location state after simulation.")
+        context.broadcastDebug("TourGuideClient", "Resetting location state after simulation.")
+        lastLocation = null
+        lastContentLocation = null
+    }
+
     /**
      * Handle location update from Android Location Services.
      * This replaces the REST API polling mechanism.
@@ -62,7 +74,7 @@ class TourGuideClient(
             abs(lastLocation!!.longitude - location.longitude) < 0.000001) {
             return // No change, skip
         }
-        
+
         lastLocation = location
         
         // Store current data
@@ -103,17 +115,21 @@ class TourGuideClient(
             val distance = location.distanceTo(lastContentLoc)
             val thresholdM = config.contentGenerationDistanceThresholdM.toFloat()
             
-            // Adjust threshold based on speed
+            // Adjust threshold based on speed, ensuring it doesn't fall below the base threshold
             val speedMultiplier = speedKmh / config.speedReferenceBaseline
-            val adjustedThreshold = thresholdM * speedMultiplier
+            val adjustedThreshold = (thresholdM * speedMultiplier).coerceAtLeast(thresholdM)
             
             if (distance < adjustedThreshold) {
+                Log.i(TAG, "Distance threshold not met ($distance m < $adjustedThreshold m, speed: $speedKmh km/h). Skipping content generating.")
+                context.broadcastDebug("TourGuideClient", "Distance threshold not met ($distance m < $adjustedThreshold m, speed: $speedKmh km/h). Skipping content generating.")
                 return // Not enough movement
             }
             Log.i(TAG, "Distance threshold met ($distance m >= $adjustedThreshold m, speed: $speedKmh km/h). Generating content.")
+            context.broadcastDebug("TourGuideClient", "Distance threshold met ($distance m >= $adjustedThreshold m, speed: $speedKmh km/h). Generating content.")
         } else {
             // First run behavior: generate immediately
             Log.i(TAG, "First location update. Generating content immediately.")
+            context.broadcastDebug("TourGuideClient", "First location update. Generating content immediately.")
         }
         
         // Generate destination summary if needed
@@ -174,7 +190,9 @@ class TourGuideClient(
             )
             
             if (places.isEmpty()) {
-                Log.i(TAG, "No places found near location")
+                Log.i(TAG, "No places of interest found near location")
+                context.broadcastDebug("TourGuideClient", "No places of interest found near location")
+
                 latestContent = emptyList()
                 hasNewContent = false
                 lastContentLocation = location
@@ -182,6 +200,7 @@ class TourGuideClient(
             }
             
             Log.i(TAG, "Found ${places.size} places, generating summaries...")
+            context.broadcastDebug("TourGuideClient", "Found ${places.size} places, generating summaries...")
             
             // Generate summaries for each place
             val summaries = mutableListOf<String>()
@@ -470,6 +489,7 @@ class TourGuideClient(
             latestAudio = emptyList() // Clear audio after returning
             
             Log.i(TAG, "Returning ${content.size} summaries to client")
+
             return ContentResponse(
                 status = 1,
                 content = content,

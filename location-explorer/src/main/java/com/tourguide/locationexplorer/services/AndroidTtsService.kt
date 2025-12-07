@@ -1,6 +1,8 @@
 package com.tourguide.locationexplorer.services
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import java.util.Locale
@@ -32,6 +34,12 @@ class AndroidTtsService : TtsService, TextToSpeech.OnInitListener {
                 Log.e(TAG, "The specified language is not supported!")
                 isInitialized = false
             } else {
+                // Set audio attributes for navigation
+                val audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+                tts?.setAudioAttributes(audioAttributes)
                 isInitialized = true
             }
         } else {
@@ -43,22 +51,24 @@ class AndroidTtsService : TtsService, TextToSpeech.OnInitListener {
     }
 
     override fun speak(text: String, language: String) {
-        // Ignoring language parameter for now as we hardcoded US locale, 
-        // but this satisfies the interface requirement.
         if (!isInitialized || tts == null) {
             Log.w(TAG, "TTS not initialized, skipping speak request.")
             return
         }
-        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, null)
+
+        val params = Bundle()
+        // No extra params needed for now, but this is where you'd add them if required
+
+        tts?.speak(text, TextToSpeech.QUEUE_ADD, params, null)
     }
     
-    // Overload for queue control, used by TourGuideService
     fun speak(text: String, queueMode: Int) {
         if (!isInitialized || tts == null) {
             Log.w(TAG, "TTS not initialized, skipping speak request.")
             return
         }
-        tts?.speak(text, queueMode, null, null)
+        val params = Bundle()
+        tts?.speak(text, queueMode, params, null)
     }
 
     override suspend fun generateAudio(text: String, language: String): ByteArray? {
