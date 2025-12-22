@@ -11,6 +11,5 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ContentResponse(
     val status: Int,
-    val content: List<String> = emptyList(),
-    val audio: List<String> = emptyList() // base64 encoded
+    val content: List<String> = emptyList()
 )

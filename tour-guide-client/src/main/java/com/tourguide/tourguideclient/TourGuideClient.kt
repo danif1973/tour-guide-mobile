@@ -31,14 +31,12 @@ class TourGuideClient(
         private const val TAG = "TourGuideClient"
     }
     
-    private var isRunning = false
     private var locationCount = 0
     private var lastLocation: Location? = null
     private var lastContentLocation: Location? = null
     
     // Content generation state variables
     private var latestContent: List<String> = emptyList()
-    private var latestAudio: List<String> = emptyList() // base64-encoded MP3
     private var hasNewContent = false
     private var isGeneratingContent = false
     
@@ -46,10 +44,8 @@ class TourGuideClient(
     private var destination: Location? = null
     private var destinationSummaryGenerated = false
     
-    // Current data for content generation
-    private var currentData: Map<String, Any> = emptyMap()
-    
-    private val clientScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    // Current data
+    private var currentHeading: Float = 0f
 
     /**
      * Resets the last known location, forcing the next GPS update to be processed.
@@ -76,14 +72,7 @@ class TourGuideClient(
         }
 
         lastLocation = location
-        
-        // Store current data
-        currentData = mapOf(
-            "location" to mapOf("lat" to location.latitude, "lng" to location.longitude),
-            "speed" to (speedKmh ?: 0f),
-            "heading" to (headingDegrees ?: 0f),
-            "status" to "Active"
-        )
+        currentHeading = headingDegrees ?: 0f
         
         Log.d(TAG, "Location received: ${location.latitude}, ${location.longitude}, count: $locationCount")
         
@@ -158,9 +147,9 @@ class TourGuideClient(
             // Try to predict future position if heading is available
             var searchLat = location.latitude
             var searchLng = location.longitude
-            val heading = (currentData["heading"] as? Number)?.toFloat()
+            val heading = currentHeading
             
-            if (heading != null && heading != 0f) {
+            if (heading != 0f) {
                 val futurePos = calculateFuturePositionAlongHeading(
                     location.latitude,
                     location.longitude,
@@ -204,9 +193,8 @@ class TourGuideClient(
             
             // Generate summaries for each place
             val summaries = mutableListOf<String>()
-            val audioList = mutableListOf<String?>()
             
-            places.forEachIndexed { index, place ->
+            for ((index, place) in places.withIndex()) {
                 val placeName = place.name
                 Log.d(TAG, "Generating summary for place ${index + 1}/${places.size}: $placeName")
                 
@@ -235,7 +223,7 @@ class TourGuideClient(
                     // Wrap Gemini call in try-catch to handle serialization errors or API issues
                     try {
                         // Add relative direction if heading is available
-                        if (heading != null && heading != 0f) {
+                        if (heading != 0f) {
                             val relativeDirection = calculateRelativeDirection(
                                 location.latitude,
                                 location.longitude,
@@ -258,36 +246,32 @@ class TourGuideClient(
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "[${index + 1}/${places.size}] Failed to generate summary for $placeName: ${e.message}", e)
-                        // Continue to next place instead of crashing entire loop
+                        break
                     }
                     
                     if (summary != null) {
                         summaries.add(summary)
-                        
-                        // Generate audio
-                        val audio = ttsService?.generateAudio(summary)
-                        audioList.add(audio?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) })
-                        
                         Log.d(TAG, "[${index + 1}/${places.size}] Generated summary for: $placeName")
                     } else {
                         Log.i(TAG, "[${index + 1}/${places.size}] Skipped $placeName: insufficient information or generation failed")
+                        break
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "[${index + 1}/${places.size}] Failed to process place $placeName: ${e.message}", e)
+                    break
                 }
             }
             
             // Update state
             latestContent = summaries
-            latestAudio = audioList.mapNotNull { it }
             hasNewContent = summaries.isNotEmpty()
             lastContentLocation = location
             
             Log.i(TAG, "Content generation completed: ${summaries.size} summaries ready")
+            context.broadcastDebug("TourGuideClient", "Content generation completed: ${summaries.size} summaries ready")
         } catch (e: Exception) {
             Log.e(TAG, "Content generation failed: ${e.message}", e)
             latestContent = emptyList()
-            latestAudio = emptyList()
             hasNewContent = false
         } finally {
             isGeneratingContent = false
@@ -326,15 +310,6 @@ class TourGuideClient(
                 val updatedContent = mutableListOf(summary)
                 updatedContent.addAll(latestContent)
                 latestContent = updatedContent
-                
-                // Generate audio for destination summary
-                val audio = ttsService?.generateAudio(summary)
-                if (audio != null) {
-                    val audioBase64 = android.util.Base64.encodeToString(audio, android.util.Base64.NO_WRAP)
-                    val updatedAudio = mutableListOf(audioBase64)
-                    updatedAudio.addAll(latestAudio)
-                    latestAudio = updatedAudio
-                }
                 
                 hasNewContent = true
                 destinationSummaryGenerated = true
@@ -484,46 +459,17 @@ class TourGuideClient(
         
         if (hasNewContent && latestContent.isNotEmpty()) {
             val content = latestContent.toList()
-            val audio = latestAudio.toList()
             hasNewContent = false
-            latestAudio = emptyList() // Clear audio after returning
             
             Log.i(TAG, "Returning ${content.size} summaries to client")
 
             return ContentResponse(
                 status = 1,
-                content = content,
-                audio = audio
+                content = content
             )
         } else {
             Log.d(TAG, "No content available")
             return ContentResponse(status = 0)
         }
-    }
-    
-    /**
-     * Start the client.
-     */
-    fun start() {
-        if (isRunning) {
-            Log.w(TAG, "Client already running")
-            return
-        }
-        
-        isRunning = true
-        Log.i(TAG, "Tour guide client started")
-    }
-    
-    /**
-     * Stop the client.
-     */
-    fun stop() {
-        if (!isRunning) {
-            return
-        }
-        
-        isRunning = false
-        clientScope.cancel()
-        Log.i(TAG, "Tour guide client stopped")
     }
 }

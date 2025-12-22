@@ -5,6 +5,7 @@ import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.GenerateContentResponse
 import com.google.ai.client.generativeai.type.SerializationException
 import com.google.ai.client.generativeai.type.ServerException
+import com.google.ai.client.generativeai.type.content
 import com.google.ai.client.generativeai.type.generationConfig
 import com.tourguide.locationexplorer.config.LocationExplorerConfig
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,7 @@ class GeminiService(
         model = GenerativeModel(
             modelName = config.geminiModel,
             apiKey = apiKey,
+            systemInstruction = content { text(config.osmPlaceSystemPrompt) },
             generationConfig = generationConfig {
                 temperature = config.geminiTemperature
                 maxOutputTokens = config.geminiMaxTokens
@@ -134,7 +136,6 @@ class GeminiService(
         val placeJson = "{${jsonParts.joinToString(", ")}}"
         
         val promptParts = mutableListOf<String>()
-        promptParts.add(config.osmPlaceSystemPrompt)
         promptParts.addAll(config.osmPlaceUserPromptParts.map { part ->
             part.replace("{place_json}", placeJson)
                 .replace("{max_sentences}", maxSentences.toString())
@@ -265,13 +266,13 @@ class GeminiService(
             val finishReason = response?.candidates?.firstOrNull()?.finishReason?.name ?: "NO_CANDIDATES"
             val promptFeedback = response?.promptFeedback?.toString() ?: "NO_PROMPT_FEEDBACK"
             Log.e(TAG, "Gemini summary failed for $placeName due to SerializationException. Finish reason: $finishReason. Prompt Feedback: $promptFeedback", e)
-            return@withContext null
+            throw(e)
         } catch (e: ServerException) {
             Log.e(TAG, "Gemini summary failed for $placeName due to a server error (e.g. API key issue).", e)
-            return@withContext null
+            throw(e)
         } catch (e: Exception) {
-            Log.e(TAG, "Gemini summary failed for $placeName with a generic error.", e)
-            return@withContext null
+            Log.e(TAG, "Gemini summary failed for $placeName with a generic error.")
+            throw(e)
         }
     }
 }

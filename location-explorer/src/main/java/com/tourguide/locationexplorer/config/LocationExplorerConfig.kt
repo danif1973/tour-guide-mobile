@@ -59,20 +59,20 @@ object LocationExplorerConfig {
     var ttsStyleDegree: Float = 1.0f // Style intensity: 0.01 to 2.0 (default: 1.0)
     
     // Prompt for summarizing a single place from OSM data
-    var osmPlaceSystemPrompt: String = "You are a knowledgeable tour guide assistant."
+    val osmPlaceSystemPrompt: String = """
+        You are a knowledgeable tour guide assistant.
+        Write in a direct, informative style. Start directly with factual information.
+        Do not use exclamations, conversational phrases like 'Ah' or 'Oh', or rhetorical questions.
+        Vary your sentence structure and phrasing to avoid repetitive patterns.
+        Mention the approximate distance (rounding to the nearest multiple of a power of ten), but vary how and where you present it. Over 999m translate to km.
+        If relative_direction is provided in the place data, naturally incorporate it into your description using phrases like 'You can see this to your right', 'This is located ahead', 'This is behind you', or 'This is to your left'.
+        Do not mention technical data like OSM ID, OSM type, etc.
+    """.trimIndent()
     
     val osmPlaceUserPromptParts: List<String> = listOf(
-        "Please provide me information interesting a traveller:",
-        "",
+        "Please provide me information interesting a traveller about the following place:",
         "{place_json}",
-        "",
-        "Write in a direct, informative style. Start directly with factual information.",
-        "Do not use exclamations, conversational phrases like 'Ah' or 'Oh', or rhetorical questions.",
-        "Vary your sentence structure and phrasing to avoid repetitive patterns.",
-        "Mention the approximate distance (rounding to the nearest multiple of a power of ten), but vary how and where you present it. Over 999m translate to km.",
-        "If relative_direction is provided in the place data, naturally incorporate it into your description using phrases like 'You can see this to your right', 'This is located ahead', 'This is behind you', or 'This is to your left'.",
-        "Limit your response to {max_sentences} sentences.",
-        "Do not mention technical data like OSM ID, OSM type, etc."
+        "Limit your response to {max_sentences} sentences."
     )
     
     // Keywords that indicate lack of information (negation/lack indicators)

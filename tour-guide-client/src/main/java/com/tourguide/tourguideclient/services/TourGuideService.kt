@@ -167,8 +167,8 @@ class TourGuideService : Service() {
             broadcastDebug("TourGuideService", "Failed to start foreground: ${e.message}")
         }
 
-        // 2. Start TourGuideClient
-        tourGuideClient.start()
+        // 2. Start TourGuideClient (removed as methods start/stop were removed)
+        // tourGuideClient.start()
 
         // 3. Start Location Updates
         startLocationUpdates()
@@ -188,7 +188,7 @@ class TourGuideService : Service() {
             // Ignore
         }
         stopLocationUpdates()
-        tourGuideClient.stop()
+        // tourGuideClient.stop() - removed
         ttsService.shutdown()
         serviceScope.cancel()
     }
@@ -257,13 +257,13 @@ class TourGuideService : Service() {
                 val response = tourGuideClient.getContent()
 
                 if (response.status == 1) { // Success
-                    Log.i(TAG, "New content generated. Audio items: ${response.audio.size}")
-                    broadcastDebug("TourGuideService", "New content generated. Audio items: ${response.audio.size}")
+                    Log.i(TAG, "New content generated. Content items: ${response.content.size}")
+                    broadcastDebug("TourGuideService", "New content generated. Content items: ${response.content.size}")
 
                     // Play audio for the new content in the correct order
                     response.content.forEachIndexed { index, text ->
-                        // The AndroidTtsService will handle the queuing logic
-                        (ttsService as? AndroidTtsService)?.speak(
+                        // The cast is no longer needed since TtsService interface now supports speak with queueMode
+                        ttsService.speak(
                             text,
                             if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
                         )

@@ -2,6 +2,7 @@ package com.tourguide.locationexplorer.services
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.util.Log
@@ -34,13 +35,14 @@ class AndroidTtsService : TtsService, TextToSpeech.OnInitListener {
                 Log.e(TAG, "The specified language is not supported!")
                 isInitialized = false
             } else {
-                // Set audio attributes for navigation
+                // Set audio attributes for navigation to enable ducking
                 val audioAttributes = AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
                 tts?.setAudioAttributes(audioAttributes)
                 isInitialized = true
+                Log.i(TAG, "TTS Initialized with Navigation Guidance attributes")
             }
         } else {
             Log.e(TAG, "TTS Initialization failed!")
@@ -51,28 +53,35 @@ class AndroidTtsService : TtsService, TextToSpeech.OnInitListener {
     }
 
     override fun speak(text: String, language: String) {
-        if (!isInitialized || tts == null) {
-            Log.w(TAG, "TTS not initialized, skipping speak request.")
-            return
-        }
-
-        val params = Bundle()
-        // No extra params needed for now, but this is where you'd add them if required
-
-        tts?.speak(text, TextToSpeech.QUEUE_ADD, params, null)
+        speak(text, TextToSpeech.QUEUE_ADD)
     }
     
-    fun speak(text: String, queueMode: Int) {
+    override fun speak(text: String, queueMode: Int) {
+        Log.i(TAG, "speak request: ${text.take(30)}... (Queue: $queueMode)")
+        
         if (!isInitialized || tts == null) {
             Log.w(TAG, "TTS not initialized, skipping speak request.")
             return
         }
+
         val params = Bundle()
-        tts?.speak(text, queueMode, params, null)
+        // Explicitly set volume to max
+        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+        
+        // Use STREAM_MUSIC as fallback. AudioAttributes (set in onInit) should still 
+        // dictate the USAGE (Navigation), but this helps ensure routing to main speakers 
+        // on some Android Auto implementations where Navigation stream might be muted.
+        params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
+
+        val result = tts?.speak(text, queueMode, params, null)
+        if (result == TextToSpeech.ERROR) {
+            Log.e(TAG, "Error queuing text to speech")
+        }
     }
 
     override suspend fun generateAudio(text: String, language: String): ByteArray? {
-        Log.w(TAG, "generateAudio is not supported by AndroidTtsService and will do nothing.")
+        // Android TTS doesn't support generating raw audio bytes easily, 
+        // so we return null. The caller should handle playback via speak().
         return null
     }
 

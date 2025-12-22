@@ -35,6 +35,13 @@ interface TtsService {
      * @param language Language code (default: "en")
      */
     fun speak(text: String, language: String = "en")
+
+    /**
+     * Speak text using TTS with specific queue mode.
+     * @param text Text to speak
+     * @param queueMode Queue mode (e.g. TextToSpeech.QUEUE_ADD)
+     */
+    fun speak(text: String, queueMode: Int)
     
     /**
      * Stop speaking.
