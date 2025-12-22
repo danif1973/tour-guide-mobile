@@ -97,6 +97,10 @@ object LocationExplorerConfig {
         "appears to be", "seems to be"
     )
     
+    // --- Places Service Configuration ---
+    var useGeoapify: Boolean = true
+    var geoapifyApiKey: String? = null
+
     // Overpass API Configuration
     var overpassApiUrl: String = "https://overpass-api.de/api/interpreter"
     var overpassTimeout: Int = 25
@@ -160,15 +164,19 @@ object LocationExplorerConfig {
     var enablePlaceHistory: Boolean = true
     
     init {
-        // Try to load API key from BuildConfig if available
+        // Try to load API keys from BuildConfig if available
         try {
-            val key = BuildConfig.GEMINI_API_KEY.toString()
-            if (key.isNotBlank() && key != "null") {
-                geminiApiKey = key
+            val geminiKey = BuildConfig.GEMINI_API_KEY.toString()
+            if (geminiKey.isNotBlank()) {
+                geminiApiKey = geminiKey
+            }
+            val geoapifyKey = BuildConfig.GEOAPIFY_API_KEY.toString()
+            if (geoapifyKey.isNotBlank()) {
+                geoapifyApiKey = geoapifyKey
             }
         } catch (e: Throwable) {
             // BuildConfig might not be generated yet or not accessible
-            Log.w(TAG, "Could not load API key from BuildConfig")
+            Log.w(TAG, "Could not load API keys from BuildConfig")
         }
     }
     

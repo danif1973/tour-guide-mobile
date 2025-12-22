@@ -21,7 +21,7 @@ import kotlin.math.*
  */
 class OverpassService(
     private val config: LocationExplorerConfig = LocationExplorerConfig
-) {
+) : PlacesService {
     companion object {
         private const val TAG = "OverpassService"
         private const val DEFAULT_SPEED_REFERENCE_BASELINE = 50.0f
@@ -65,11 +65,11 @@ class OverpassService(
      * Search for places near coordinates using Overpass API.
      * If no results after filtering, progressively increases radius up to MAX_RADIUS_M.
      */
-    suspend fun searchPlacesByCoordinates(
+    override suspend fun searchPlacesByCoordinates(
         lat: Double,
         lng: Double,
         radiusM: Int,
-        speedKmh: Float = DEFAULT_SPEED_REFERENCE_BASELINE
+        speedKmh: Float
     ): List<PlaceInfo> = withContext(kotlinx.coroutines.Dispatchers.IO) {
         val maxAttempts = config.maxRadiusRetries
         val minRadiusM = 200
@@ -181,7 +181,7 @@ class OverpassService(
             val (lat, lng) = coordinates
             Log.d(TAG, "Geocoded '$locationName' to: $lat, $lng")
             
-            return@withContext searchPlacesByCoordinates(lat, lng, radiusM)
+            return@withContext searchPlacesByCoordinates(lat, lng, radiusM, DEFAULT_SPEED_REFERENCE_BASELINE)
         } catch (e: Exception) {
             Log.e(TAG, "Error searching places by name: ${e.message}", e)
             return@withContext emptyList()

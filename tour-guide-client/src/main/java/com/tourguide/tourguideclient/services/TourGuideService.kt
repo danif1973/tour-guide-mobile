@@ -26,13 +26,15 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.tourguide.locationexplorer.config.LocationExplorerConfig
 import com.tourguide.locationexplorer.services.AndroidTtsService
 import com.tourguide.locationexplorer.services.GeminiService
+import com.tourguide.locationexplorer.services.GeoapifyService
 import com.tourguide.locationexplorer.services.OverpassService
+import com.tourguide.locationexplorer.services.PlacesService
 import com.tourguide.locationexplorer.services.TtsService
 import com.tourguide.tourguideclient.TourGuideClient
 import com.tourguide.tourguideclient.config.TourGuideClientConfig
-import com.tourguide.tourguideclient.ui.TourGuideTestActivity
 import com.tourguide.tourguideclient.utils.broadcastDebug
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -116,11 +118,19 @@ class TourGuideService : Service() {
         broadcastDebug("TourGuideService", "Creating TourGuideService")
         Log.i(TAG, "Creating TourGuideService")
 
-        // 1. Initialize Services
-        val overpassService = OverpassService()
+        // --- Initialize Services ---
         val geminiService = GeminiService()
-        
         ttsService = AndroidTtsService()
+
+        // Select PlacesService implementation based on config
+        val placesService: PlacesService = if (LocationExplorerConfig.useGeoapify) {
+            Log.i(TAG, "Using GeoapifyService for places.")
+            GeoapifyService()
+        } else {
+            Log.i(TAG, "Using OverpassService for places.")
+            OverpassService()
+        }
+        
         ttsService.initialize(this) { success ->
             if (success) {
                 Log.i(TAG, "TTS Service initialized successfully")
@@ -133,7 +143,7 @@ class TourGuideService : Service() {
 
         tourGuideClient = TourGuideClient(
             context = this,
-            overpassService = overpassService,
+            placesService = placesService,
             geminiService = geminiService,
             ttsService = ttsService
         )
@@ -167,10 +177,6 @@ class TourGuideService : Service() {
             broadcastDebug("TourGuideService", "Failed to start foreground: ${e.message}")
         }
 
-        // 2. Start TourGuideClient (removed as methods start/stop were removed)
-        // tourGuideClient.start()
-
-        // 3. Start Location Updates
         startLocationUpdates()
 
         return START_STICKY
@@ -188,7 +194,6 @@ class TourGuideService : Service() {
             // Ignore
         }
         stopLocationUpdates()
-        // tourGuideClient.stop() - removed
         ttsService.shutdown()
         serviceScope.cancel()
     }
@@ -262,7 +267,6 @@ class TourGuideService : Service() {
 
                     // Play audio for the new content in the correct order
                     response.content.forEachIndexed { index, text ->
-                        // The cast is no longer needed since TtsService interface now supports speak with queueMode
                         ttsService.speak(
                             text,
                             if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
