@@ -8,12 +8,6 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application>
-        <service
-            android:name=".services.TourGuideService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="location" />
-        
         <activity
             android:name=".ui.TourGuideTestActivity"
             android:exported="true"

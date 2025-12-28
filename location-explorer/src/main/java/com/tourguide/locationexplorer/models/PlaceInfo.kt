@@ -1,11 +1,13 @@
 package com.tourguide.locationexplorer.models
 
+import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.Serializable
 
 /**
- * Information about a place found by Overpass search.
+ * Model representing a place found by the location service.
  * Ported from location_explorer/models.py
  */
+@OptIn(InternalSerializationApi::class)
 @Serializable
 data class PlaceInfo(
     val name: String,
@@ -20,5 +22,3 @@ data class PlaceInfo(
     val osmId: Long? = null,
     val osmType: String? = null
 )
-
-

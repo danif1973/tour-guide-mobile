@@ -1,20 +1,19 @@
-package com.tourguide.locationexplorer.services
+package com.tourguide.locationexplorer.models
 
+import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.Serializable
 
 /**
- * Overpass API response model.
+ * Data classes for parsing the Overpass API JSON response.
  */
+
+@OptIn(InternalSerializationApi::class)
 @Serializable
 data class OverpassResponse(
-    val version: Double? = null,
-    val generator: String? = null,
     val elements: List<OverpassElement> = emptyList()
 )
 
-/**
- * Overpass element (node, way, or relation).
- */
+@OptIn(InternalSerializationApi::class)
 @Serializable
 data class OverpassElement(
     val type: String,
@@ -25,9 +24,7 @@ data class OverpassElement(
     val tags: Map<String, String> = emptyMap()
 )
 
-/**
- * Center coordinates for ways and relations.
- */
+@OptIn(InternalSerializationApi::class)
 @Serializable
 data class OverpassCenter(
     val lat: Double,
