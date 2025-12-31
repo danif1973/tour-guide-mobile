@@ -14,17 +14,31 @@
         android:label="Tour Guide"
         android:supportsRtl="true"
         android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android.roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
+
         <activity
-            android:name="com.tourguide.tourguideclient.ui.TourGuideTestActivity"
-            android:exported="true">
+            android:name="com.tourguide.tourguideclient.ui.LauncherActivity"
+            android:exported="true"
+            android:theme="@style/Theme.AppCompat.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
+        <activity
+            android:name="com.tourguide.tourguideclient.ui.TourGuideTestActivity"
+            android:exported="false"
+            tools:replace="android:exported" />
 
         <service
             android:name="com.tourguide.tourguideclient.services.TourGuideService"
@@ -32,6 +46,16 @@
             android:exported="false"
             android:foregroundServiceType="location"
             tools:replace="android:foregroundServiceType" />
+            
+        <service
+            android:name="com.tourguide.app.TourGuideCarService"
+            android:exported="true"
+            android:label="Tour Guide"
+            android:icon="@mipmap/ic_launcher">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

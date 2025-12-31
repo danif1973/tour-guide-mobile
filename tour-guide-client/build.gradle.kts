@@ -64,6 +64,9 @@ dependencies {
     
     // Android
     implementation("androidx.core:core-ktx:1.12.0")
+
+    // Android Auto
+    implementation("androidx.car.app:app:1.7.0")
     
     // Testing
     testImplementation("junit:junit:4.13.2")

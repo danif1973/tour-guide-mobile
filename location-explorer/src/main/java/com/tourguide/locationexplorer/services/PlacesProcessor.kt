@@ -23,6 +23,10 @@ class PlacesProcessor(
         const val WEBSITE_SCORE = 0.04f
         const val WIKIPEDIA_SCORE = 0.03f
         const val MULTILINGUAL_BASE_SCORE = 0.05f
+        const val PLACE_STATE_CITY_SCORE = 0.32f
+        const val PLACE_TOWN_VILLAGE_SCORE = 0.32f
+        const val PLACE_SUBURB_SCORE = 0.1f
+        const val PLACE_SQUARE_SCORE = 0.2f
     }
     
     private val returnedPlaces = mutableMapOf<String, Long>()
@@ -216,6 +220,7 @@ class PlacesProcessor(
         var score = 0.0f
         val scoreDetails = mutableListOf<String>()
 
+        Log.i(TAG, "tags: $tags")
         tags["tourism"]?.let {
             when (it) {
                 "attraction", "museum", "monument", "theme_park", "zoo", "park" -> {
@@ -229,6 +234,20 @@ class PlacesProcessor(
                 }
             }
         }
+         // Place types
+         tags["place"]?.let { placeType ->
+             val placeScore = when (placeType) {
+                 "state", "city" -> PLACE_STATE_CITY_SCORE
+                 "town", "village" -> PLACE_TOWN_VILLAGE_SCORE
+                 "suburb" -> PLACE_SUBURB_SCORE
+                 "square" -> PLACE_SQUARE_SCORE
+                 else -> 0.0f
+             }
+             if (placeScore > 0) {
+                 score += placeScore
+                 scoreDetails.add("place=$placeType (+$placeScore)")
+             }
+         }
         if (tags.containsKey("historic")) { score += HISTORIC_SCORE; scoreDetails.add("historic (+$HISTORIC_SCORE)") }
         if (tags.containsKey("heritage")) { score += HERITAGE_SCORE; scoreDetails.add("heritage (+$HERITAGE_SCORE)") }
         if (tags.containsKey("website")) { score += WEBSITE_SCORE; scoreDetails.add("website (+$WEBSITE_SCORE)") }

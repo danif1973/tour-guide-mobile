@@ -2,48 +2,82 @@ package com.tourguide.locationexplorer.services
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import java.util.Locale
 
 class AndroidTtsService : TtsService, TextToSpeech.OnInitListener {
 
     private var tts: TextToSpeech? = null
-    private var isInitialized = false
+    @Volatile private var isInitialized = false
     private var pendingCallback: ((Boolean) -> Unit)? = null
+    
+    // Audio Focus Management
+    private var audioManager: AudioManager? = null
+    private var focusRequest: AudioFocusRequest? = null
 
     companion object {
         private const val TAG = "AndroidTtsService"
+        private const val UTTERANCE_ID = "tour_guide_utterance"
     }
 
     override fun initialize(context: Context, callback: (Boolean) -> Unit) {
+        if (isInitialized && tts != null) {
+            callback(true)
+            return
+        }
+
+        audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
         try {
             pendingCallback = callback
-            tts = TextToSpeech(context, this)
+            // Use applicationContext to avoid leaking Activity contexts
+            tts = TextToSpeech(context.applicationContext, this)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize TextToSpeech", e)
             callback(false)
+            pendingCallback = null
         }
     }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
+            // Default to US
             val result = tts?.setLanguage(Locale.US)
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 Log.e(TAG, "The specified language is not supported!")
-                isInitialized = false
-            } else {
-                // Set audio attributes for navigation to enable ducking
-                val audioAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-                tts?.setAudioAttributes(audioAttributes)
-                isInitialized = true
-                Log.i(TAG, "TTS Initialized with Navigation Guidance attributes")
             }
+
+            // Set audio attributes
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            
+            tts?.setAudioAttributes(audioAttributes)
+            
+            // Set listener to manage focus release
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {
+                    // Focus already requested before speak
+                }
+
+                override fun onDone(utteranceId: String?) {
+                    abandonFocus()
+                }
+
+                override fun onError(utteranceId: String?) {
+                    abandonFocus()
+                }
+            })
+            
+            isInitialized = true
+            Log.i(TAG, "TTS Initialized with NAVIGATION_GUIDANCE")
         } else {
             Log.e(TAG, "TTS Initialization failed!")
             isInitialized = false
@@ -53,50 +87,83 @@ class AndroidTtsService : TtsService, TextToSpeech.OnInitListener {
     }
 
     override fun speak(text: String, language: String) {
+        if (isInitialized && tts != null && language != "en") {
+            try {
+                val locale = Locale.forLanguageTag(language)
+                tts?.setLanguage(locale)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to set language: $language", e)
+            }
+        }
         speak(text, TextToSpeech.QUEUE_ADD)
     }
     
     override fun speak(text: String, queueMode: Int) {
-        Log.i(TAG, "speak request: ${text.take(30)}... (Queue: $queueMode)")
-        
         if (!isInitialized || tts == null) {
-            Log.w(TAG, "TTS not initialized, skipping speak request.")
             return
         }
 
+        // Request Audio Focus manually to ensure Car Audio "ducks" and plays our stream
+        requestFocus()
+
         val params = Bundle()
-        // Explicitly set volume to max
         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
         
-        // Use STREAM_MUSIC as fallback. AudioAttributes (set in onInit) should still 
-        // dictate the USAGE (Navigation), but this helps ensure routing to main speakers 
-        // on some Android Auto implementations where Navigation stream might be muted.
-        params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
-
-        val result = tts?.speak(text, queueMode, params, null)
+        // Use UTTERANCE_ID to trigger the progress listener
+        val result = tts?.speak(text, queueMode, params, UTTERANCE_ID)
         if (result == TextToSpeech.ERROR) {
             Log.e(TAG, "Error queuing text to speech")
+            abandonFocus() // Release if failed immediately
+        }
+    }
+    
+    private fun requestFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val attributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+                
+            focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(attributes)
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener { /* Handle interruptions if needed */ }
+                .build()
+            
+            audioManager?.requestAudioFocus(focusRequest!!)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager?.requestAudioFocus(
+                null, 
+                AudioManager.STREAM_MUSIC, // Stream type doesn't matter much for ducking on old API, but usage does
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            )
+        }
+    }
+    
+    private fun abandonFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager?.abandonAudioFocus(null)
         }
     }
 
     override suspend fun generateAudio(text: String, language: String): ByteArray? {
-        // Android TTS doesn't support generating raw audio bytes easily, 
-        // so we return null. The caller should handle playback via speak().
         return null
     }
 
     override fun stop() {
-        if (isInitialized && tts != null) {
-            tts?.stop()
-        }
+        tts?.stop()
+        abandonFocus()
     }
 
     override fun shutdown() {
-        if (isInitialized && tts != null) {
-            tts?.stop()
-            tts?.shutdown()
-            tts = null
-            isInitialized = false
-        }
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
+        isInitialized = false
+        abandonFocus()
     }
 }

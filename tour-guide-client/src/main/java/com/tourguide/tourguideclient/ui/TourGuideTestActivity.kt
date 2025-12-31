@@ -1,7 +1,6 @@
 package com.tourguide.tourguideclient.ui
 
 import android.Manifest
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -25,6 +24,9 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.tourguide.tourguideclient.services.TourGuideService
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppCompatActivity for Material components
 
@@ -32,6 +34,7 @@ class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppComp
     private lateinit var logTextView: TextView
     private lateinit var contentTextView: TextView
     private lateinit var toggleSwitch: SwitchMaterial
+    private lateinit var contentScrollView: ScrollView
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100
@@ -89,7 +92,7 @@ class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppComp
         rootLayout.addView(buttonsLayout)
 
         // --- CONTENT TEXT VIEW ---
-        val contentScrollView = ScrollView(this).apply {
+        contentScrollView = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f) // Takes up half the space
             setBackgroundColor(Color.BLACK)
         }
@@ -164,7 +167,7 @@ class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppComp
                     val lng = lngInput.text.toString().toDouble()
                     controller.simulateLocation(lat, lng)
                     appendLog("-> Simulation request sent for: $lat, $lng")
-                } catch (e: NumberFormatException) {
+                } catch (_: NumberFormatException) {
                     Toast.makeText(context, "Invalid coordinates", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -191,10 +194,16 @@ class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppComp
 
         controller.register { contentList ->
             runOnUiThread {
-                contentTextView.text = ""
-                // Removed .reversed() to fix ordering issue
+                // Append new content with timestamp instead of clearing
+                val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                contentTextView.append("\n--- Update ($timestamp) ---\n")
                 contentList.forEach { item ->
                     appendContent("• $item")
+                }
+                
+                // Scroll to bottom
+                contentScrollView.post { 
+                    contentScrollView.fullScroll(View.FOCUS_DOWN)
                 }
             }
         }
@@ -204,7 +213,7 @@ class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppComp
         super.onDestroy()
         try {
             unregisterReceiver(debugReceiver)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // Ignore
         }
         controller.stopService()
@@ -219,7 +228,7 @@ class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppComp
     
     @Suppress("DEPRECATION")
     private fun isServiceRunning(serviceClass: Class<*>): Boolean {
-        val manager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val manager = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
         for (service in manager.getRunningServices(Int.MAX_VALUE)) {
             if (serviceClass.name == service.service.className) {
                 return true

@@ -1,5 +1,7 @@
 package com.tourguide.locationexplorer.services
 
+// https://apidocs.geoapify.com/docs/places/#categories
+
 import android.util.Log
 import com.tourguide.locationexplorer.config.LocationExplorerConfig
 import com.tourguide.locationexplorer.models.PlaceInfo
@@ -55,33 +57,18 @@ class GeoapifyService(
             return@withContext emptyList()
         }
         
-        // Dynamic radius calculation based on speed
-        val speedMultiplier = speedKmh / DEFAULT_SPEED_REFERENCE_BASELINE
-        var currentRadius = (radiusM * speedMultiplier).toInt().coerceAtLeast(200)
-            .coerceAtMost(config.maxRadiusM)
+        val url = "${BASE_URL}?categories=${categories.joinToString(",")}&filter=circle:$lng,$lat,$radiusM&limit=${config.maxResults * 2}&apiKey=${config.geoapifyApiKey}"
+        Log.i(TAG, "Searching Geoapify: $lat, $lng radius=$radiusM")
+        Log.i(TAG, "URL: $url")
 
-        for (attempt in 0 until config.maxRadiusRetries) {
-            Log.i(TAG, "Searching Geoapify: $lat, $lng radius=$currentRadius (Attempt ${attempt + 1})")
-            
-            try {
-                val url = "${BASE_URL}?categories=${categories.joinToString(",")}&filter=circle:$lng,$lat,$currentRadius&limit=${config.maxResults * 2}&apiKey=${config.geoapifyApiKey}"
-                val rawPlaces = executeGeoapifyQuery(url)
-
-                if (rawPlaces.isNotEmpty()) {
-                    val processedPlaces = processor.processPlaces(rawPlaces, lat, lng)
-                    if (processedPlaces.isNotEmpty()) {
-                        return@withContext processedPlaces
-                    }
-                }
-                
-                // If no places found or all were filtered, expand radius for next attempt
-                currentRadius = (currentRadius * 1.5).toInt().coerceAtMost(config.maxRadiusM)
-                if (attempt < config.maxRadiusRetries - 1) delay((config.radiusRetryDelay * 1000).toLong())
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error fetching from Geoapify", e)
-                break // Stop on error
+        try {
+            val rawPlaces = executeGeoapifyQuery(url)
+            Log.i(TAG, "Query Result: $rawPlaces")
+            if (rawPlaces.isNotEmpty()) {
+                return@withContext processor.processPlaces(rawPlaces, lat, lng)
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching from Geoapify", e)
         }
 
         return@withContext emptyList()
@@ -116,7 +103,6 @@ class GeoapifyService(
             properties["name"]?.jsonPrimitive?.content?.let { tags["name"] = it }
             properties["website"]?.jsonPrimitive?.content?.let { tags["website"] = it }
             
-            // Safely extract raw tags into a new HashMap to avoid type issues downstream
             val rawTags = properties["datasource"]?.jsonObject?.get("raw")?.jsonObject
             if (rawTags != null) {
                 for ((key, value) in rawTags.entries) {
@@ -125,11 +111,11 @@ class GeoapifyService(
             }
 
             return mutableMapOf(
-                "type" to "node", // Simplified for compatibility
+                "type" to "node",
                 "id" to (properties["place_id"]?.jsonPrimitive?.content?.hashCode()?.toLong() ?: 0L),
                 "lat" to lat,
                 "lon" to lng,
-                "tags" to HashMap(tags) // Ensure it's a standard Kotlin map
+                "tags" to HashMap(tags)
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse Geoapify feature", e)
@@ -138,16 +124,13 @@ class GeoapifyService(
     }
 
     private fun buildCategoriesList(): List<String> {
-        // A more comprehensive mapping from config to Geoapify categories
-        return (config.tourismTypes + config.historicTypes + config.leisureTypes)
-            .mapNotNull { type ->
-                when (type) {
-                    "museum" -> "entertainment.museum"
-                    "attraction", "theme_park", "zoo" -> "tourism.attraction"
-                    "monument", "memorial", "archaeological_site", "castle", "ruins", "fort" -> "tourism.sights"
-                    "park", "garden", "nature_reserve" -> "leisure.park"
-                    else -> null
-                }
-            }.toSet().toList()
+        val categories = mutableSetOf<String>()
+        categories.add("entertainment")
+        categories.add("tourism.attraction")
+        categories.add("tourism.sights")
+        categories.add("leisure.park")
+        categories.add("populated_place")
+
+        return categories.toList()
     }
 }

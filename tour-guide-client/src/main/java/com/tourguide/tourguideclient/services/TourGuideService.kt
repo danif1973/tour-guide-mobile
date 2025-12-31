@@ -62,6 +62,10 @@ class TourGuideService : Service() {
         const val ACTION_SIMULATE_LOCATION = "com.tourguide.tourguideclient.SIMULATE_LOCATION"
         const val EXTRA_LAT = "extra_lat"
         const val EXTRA_LNG = "extra_lng"
+
+        @Volatile
+        var isRunning = false
+            private set
     }
 
     private lateinit var tourGuideClient: TourGuideClient
@@ -115,12 +119,14 @@ class TourGuideService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         broadcastDebug("TourGuideService", "Creating TourGuideService")
         Log.i(TAG, "Creating TourGuideService")
 
         // --- Initialize Services ---
         val geminiService = GeminiService()
         ttsService = AndroidTtsService()
+
 
         // Select PlacesService implementation based on config
         val placesService: PlacesService = if (LocationExplorerConfig.useGeoapify) {
@@ -184,13 +190,14 @@ class TourGuideService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isRunning = false
         Log.i(TAG, "Destroying TourGuideService")
         broadcastDebug("TourGuideService", "Destroying TourGuideService")
         
         // Cleanup
         try {
             unregisterReceiver(simulationReceiver)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // Ignore
         }
         stopLocationUpdates()
@@ -266,10 +273,10 @@ class TourGuideService : Service() {
                     broadcastDebug("TourGuideService", "New content generated. Content items: ${response.content.size}")
 
                     // Play audio for the new content in the correct order
-                    response.content.forEachIndexed { index, text ->
+                    response.content.forEach { text ->
                         ttsService.speak(
                             text,
-                            if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                            TextToSpeech.QUEUE_ADD
                         )
                     }
 

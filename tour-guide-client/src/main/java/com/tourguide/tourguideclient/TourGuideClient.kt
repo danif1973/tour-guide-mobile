@@ -103,10 +103,10 @@ class TourGuideClient(
             // Standard behavior: check distance
             val distance = location.distanceTo(lastContentLoc)
             val thresholdM = config.contentGenerationDistanceThresholdM.toFloat()
+            val thresholdMinM = config.contentGenerationDistanceMinThresholdM.toFloat()
             
-            // Adjust threshold based on speed, ensuring it doesn't fall below the base threshold
             val speedMultiplier = speedKmh / config.speedReferenceBaseline
-            val adjustedThreshold = (thresholdM * speedMultiplier).coerceAtLeast(thresholdM)
+            val adjustedThreshold = (thresholdM * speedMultiplier).coerceAtLeast(thresholdMinM)
             
             if (distance < adjustedThreshold) {
                 Log.i(TAG, "Distance threshold not met ($distance m < $adjustedThreshold m, speed: $speedKmh km/h). Skipping content generating.")
@@ -202,7 +202,6 @@ class TourGuideClient(
             isGeneratingContent = false
         }
     }
-    
     /**
      * Generate a summary for the destination when navigation starts.
      */
@@ -232,7 +231,6 @@ class TourGuideClient(
             destinationSummaryGenerated = true // Mark as done to avoid retries
         }
     }
-    
     /**
      * Calculate dynamic max_sentences based on number of places, place index and place importance.
      */
@@ -240,14 +238,18 @@ class TourGuideClient(
         val threshold = 0.32f // A reasonable default importance threshold
         val minSentences = 4
         val defaultMax = LocationExplorerConfig.defaultMaxSentences
-        
-        return when {
+
+        val maxSentences = when {
             totalPlaces <= 2 && importance >= threshold -> defaultMax
             totalPlaces <= 2 -> max(minSentences, defaultMax - 2)
             placeIndex == 0 && importance >= threshold -> defaultMax
             placeIndex == 0 -> max(minSentences, defaultMax - 2)
             else -> max(minSentences, defaultMax - placeIndex)
         }.let { min(it, defaultMax) }
+
+        Log.i(TAG, "Number of sentences limited to: $maxSentences")
+        return maxSentences
+
     }
     
     // ... (rest of the helper functions: calculateRelativeDirection, calculateDistanceM, calculateFuturePositionAlongHeading, getContent) ...
