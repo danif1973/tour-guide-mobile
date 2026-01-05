@@ -28,7 +28,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppCompatActivity for Material components
+class TourGuideActivity : AppCompatActivity() { // Must inherit from AppCompatActivity for Material components
 
     private lateinit var controller: TourGuideController
     private lateinit var logTextView: TextView
@@ -134,7 +134,7 @@ class TourGuideTestActivity : AppCompatActivity() { // Must inherit from AppComp
         val filter = IntentFilter(ACTION_DEBUG_LOG)
         ContextCompat.registerReceiver(this, debugReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         
-        appendLog("Activity created. Waiting for service to start...")
+        appendLog("Waiting for service to start...")
     }
     
     private fun showLocationDialog() {

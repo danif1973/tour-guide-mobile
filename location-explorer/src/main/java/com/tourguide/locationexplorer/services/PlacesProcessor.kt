@@ -39,20 +39,15 @@ class PlacesProcessor(
         Log.i(TAG, "Starting processing for ${rawPlaces.size} raw places.")
 
         val processedPlaces = prioritizeEnglishNames(rawPlaces)
+        val namedPlaces = filterUnnamedPlaces(processedPlaces)
 
-        val historyFiltered = filterPlacesByHistory(processedPlaces)
+        val historyFiltered = filterPlacesByHistory(namedPlaces)
         if (historyFiltered.isEmpty()) {
             Log.i(TAG, "All places filtered out by history. Nothing to return.")
             return emptyList()
         }
 
-        val tagFiltered = filterPlacesByTags(historyFiltered)
-        if (tagFiltered.isEmpty()) {
-            Log.i(TAG, "All places filtered out by tags. Nothing to return.")
-            return emptyList()
-        }
-
-        val rankedPlaces = rankPlacesByPromise(tagFiltered, centerLat, centerLng)
+        val rankedPlaces = rankPlacesByPromise(historyFiltered, centerLat, centerLng)
         val finalPlaces = filterByPromiseScore(rankedPlaces)
 
         if (finalPlaces.isEmpty()) {
@@ -67,6 +62,24 @@ class PlacesProcessor(
         Log.i(TAG, "Finished processing. Returning ${result.size} places.")
         return result
     }
+
+    private fun filterUnnamedPlaces(places: List<Map<String, Any>>): List<Map<String, Any>> {
+        val initialCount = places.size
+
+        val filtered = places.filter { place ->
+            val tags = place["tags"] as? Map<*, *>
+            val name = tags?.get("name") as? String
+
+            (!name.isNullOrBlank()) && name.lowercase() != "unnamed"
+        }
+
+        val removedCount = initialCount - filtered.size
+        if (removedCount > 0) {
+            Log.i(TAG, "Unnamed Filter: Removed $removedCount unnamed or blank-named places.")
+        }
+        return filtered
+    }
+
 
     private fun filterPlacesByHistory(places: List<Map<String, Any>>): List<Map<String, Any>> {
         if (!config.enablePlaceHistory) return places
@@ -87,25 +100,6 @@ class PlacesProcessor(
             }
             place.toMutableMap().apply { this["tags"] = newTags }
         }
-    }
-
-    private fun filterPlacesByTags(places: List<Map<String, Any>>): List<Map<String, Any>> {
-        if (config.overpassFilters.isEmpty()) return places
-        val initialCount = places.size
-        val filtered = places.filter { place -> config.overpassFilters.all { applyFilter(place, it) } }
-        Log.i(TAG, "Tag Filter: Removed ${initialCount - filtered.size} places based on filters.")
-        return filtered
-    }
-
-    private fun applyFilter(place: Map<String, Any>, filterExpr: String): Boolean {
-        val tags = (place["tags"] as? Map<*, *>)?.mapNotNull { (k, v) -> (k as? String)?.let { key -> v?.toString()?.let { value -> key to value } } }?.toMap() ?: emptyMap()
-        return filterExpr.split(" AND ").all { checkFilterCondition(tags, it.trim()) }
-    }
-
-    private fun checkFilterCondition(tags: Map<String, String>, condition: String): Boolean {
-        val parts = condition.split(":", limit = 2)
-        if (parts.size < 2) return true
-        return tags[parts[0].trim()] != parts[1].trim()
     }
 
     private fun rankPlacesByPromise(places: List<Map<String, Any>>, centerLat: Double, centerLng: Double): List<Map<String, Any>> {
@@ -153,9 +147,12 @@ class PlacesProcessor(
 
         // Calculate threshold from cleaned data
         val cleanedScores = cleanedPlaces.mapNotNull { it["promise_score"] as? Float }
-        val avgScore = if (cleanedScores.isNotEmpty()) cleanedScores.average().toFloat() else 0.0f
-        val adaptiveThreshold = max(config.importanceThreshold, avgScore)
-        Log.i(TAG, "Filtering by promise score. Avg: $avgScore, Threshold: $adaptiveThreshold")
+        val adaptiveThreshold = if (cleanedPlaces.size > 4) {
+            max(config.importanceThreshold, cleanedScores.average().toFloat())
+        } else {
+            config.importanceThreshold
+        }
+        Log.i(TAG, "Filtering by promise score. Threshold: $adaptiveThreshold")
 
         val filtered = cleanedPlaces.filter { (it["promise_score"] as? Float ?: 0f) >= adaptiveThreshold }
         val result = if (config.maxResults > 0) filtered.take(config.maxResults) else filtered
@@ -238,7 +235,7 @@ class PlacesProcessor(
          tags["place"]?.let { placeType ->
              val placeScore = when (placeType) {
                  "state", "city" -> PLACE_STATE_CITY_SCORE
-                 "town", "village" -> PLACE_TOWN_VILLAGE_SCORE
+                 "town", "village", "municipality" -> PLACE_TOWN_VILLAGE_SCORE
                  "suburb" -> PLACE_SUBURB_SCORE
                  "square" -> PLACE_SQUARE_SCORE
                  else -> 0.0f
@@ -276,8 +273,9 @@ class PlacesProcessor(
     }
 
     private fun generatePlaceKey(place: Map<String, Any>): String? {
-        (place["id"] as? Long)?.let { id -> (place["type"] as? String)?.let { type -> return "$type:$id" } }
-        return null
+        val tags = place["tags"] as? Map<*, *>
+        val name = tags?.get("name") as? String
+        return name?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
     }
 
     private fun calculateDistance(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {

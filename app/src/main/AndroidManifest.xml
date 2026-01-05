@@ -14,7 +14,6 @@
         android:label="Tour Guide"
         android:supportsRtl="true"
         android:icon="@mipmap/ic_launcher"
-        android.roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         
         <meta-data
@@ -36,7 +35,7 @@
         </activity>
         
         <activity
-            android:name="com.tourguide.tourguideclient.ui.TourGuideTestActivity"
+            android:name="com.tourguide.tourguideclient.ui.TourGuideActivity"
             android:exported="false"
             tools:replace="android:exported" />
 

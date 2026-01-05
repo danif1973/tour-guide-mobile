@@ -127,7 +127,6 @@ class TourGuideService : Service() {
         val geminiService = GeminiService()
         ttsService = AndroidTtsService()
 
-
         // Select PlacesService implementation based on config
         val placesService: PlacesService = if (LocationExplorerConfig.useGeoapify) {
             Log.i(TAG, "Using GeoapifyService for places.")
@@ -276,7 +275,7 @@ class TourGuideService : Service() {
                     response.content.forEach { text ->
                         ttsService.speak(
                             text,
-                            TextToSpeech.QUEUE_ADD
+                            LocationExplorerConfig.defaultLanguage
                         )
                     }
 

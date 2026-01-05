@@ -9,7 +9,7 @@
 
     <application>
         <activity
-            android:name=".ui.TourGuideTestActivity"
+            android:name=".ui.TourGuideActivity"
             android:exported="true"
             android:label="Tour Guide Test">
         </activity>

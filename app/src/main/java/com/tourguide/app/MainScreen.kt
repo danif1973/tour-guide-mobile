@@ -11,10 +11,8 @@ import androidx.car.app.CarContext
 import androidx.car.app.CarToast
 import androidx.car.app.Screen
 import androidx.car.app.model.Action
-import androidx.car.app.model.CarColor
-import androidx.car.app.model.Pane
-import androidx.car.app.model.PaneTemplate
-import androidx.car.app.model.Row
+import androidx.car.app.model.ActionStrip
+import androidx.car.app.model.LongMessageTemplate
 import androidx.car.app.model.Template
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -23,7 +21,6 @@ import com.tourguide.tourguideclient.services.TourGuideService
 
 class MainScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycleObserver {
 
-    private var lastMessage: String = "Waiting for interesting places..."
     private val messageHistory = mutableListOf<String>()
 
     private val contentReceiver = object : BroadcastReceiver() {
@@ -31,12 +28,11 @@ class MainScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycleO
             if (intent?.action == TourGuideService.ACTION_TOUR_GUIDE_CONTENT) {
                 val texts = intent.getStringArrayListExtra(TourGuideService.EXTRA_CONTENT_TEXT)
                 if (!texts.isNullOrEmpty()) {
-                    // Update UI with the latest interesting fact
-                    val latest = texts.first() // Take the first one for the summary
-                    lastMessage = latest
-                    messageHistory.add(0, latest)
-                    if (messageHistory.size > 5) messageHistory.removeAt(messageHistory.lastIndex)
-                    
+                    // Add new messages to the top of the history
+                    messageHistory.addAll(0, texts)
+                    while (messageHistory.size > 50) { // Keep a long history for scrolling
+                        messageHistory.removeAt(messageHistory.lastIndex)
+                    }
                     invalidate() // Trigger redraw
                 }
             }
@@ -50,78 +46,49 @@ class MainScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycleO
     override fun onStart(owner: LifecycleOwner) {
         val filter = IntentFilter(TourGuideService.ACTION_TOUR_GUIDE_CONTENT)
         ContextCompat.registerReceiver(carContext, contentReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        invalidate() // Refresh UI on start
+        invalidate()
     }
 
     override fun onStop(owner: LifecycleOwner) {
         try {
             carContext.unregisterReceiver(contentReceiver)
         } catch (e: Exception) {
-            // Ignore if not registered
+            // Ignore
         }
     }
 
     override fun onGetTemplate(): Template {
-        val paneBuilder = Pane.Builder()
-
         val isServiceRunning = TourGuideService.isRunning
 
-        // Status Row
-        paneBuilder.addRow(
-            Row.Builder()
-                .setTitle("Status")
-                .addText(if (isServiceRunning) "Service Running" else "Service Stopped")
-                .build()
-        )
-
-        // Content Row(s)
-        if (messageHistory.isEmpty()) {
-            paneBuilder.addRow(
-                Row.Builder()
-                    .setTitle("Latest Update")
-                    .addText(lastMessage)
-                    .build()
-            )
+        val message = if (messageHistory.isEmpty()) {
+            if (isServiceRunning) "Looking for interesting locations..." else "Click 'Start' to start the Tour Guide."
         } else {
-            messageHistory.forEachIndexed { index, msg ->
-                paneBuilder.addRow(
-                    Row.Builder()
-                        .setTitle(if (index == 0) "Latest" else "History")
-                        .addText(msg.take(100) + if (msg.length > 100) "..." else "")
-                        .build()
-                )
-            }
+            // Join all history into a single block of text for the LongMessageTemplate
+            messageHistory.joinToString("\n\n")
         }
 
-        // Action Button (Toggle Service)
+        // Create the Start/Stop action
         val serviceAction = if (isServiceRunning) {
             Action.Builder()
-                .setTitle("Stop Tour")
-                .setBackgroundColor(CarColor.RED)
-                .setOnClickListener {
-                    stopService()
-                }
+                .setTitle("Stop")
+                .setOnClickListener { stopService() }
                 .build()
         } else {
             Action.Builder()
-                .setTitle("Start Tour")
-                .setBackgroundColor(CarColor.GREEN)
-                .setOnClickListener {
-                    checkPermissionsAndStartService()
-                }
+                .setTitle("Start")
+                .setOnClickListener { checkPermissionsAndStartService() }
                 .build()
         }
-        
-        // Add action to the Pane
-        paneBuilder.addAction(serviceAction)
 
-        val header = androidx.car.app.model.Header.Builder()
-            .setStartHeaderAction(Action.APP_ICON)
-            .setTitle("Tour Guide")
+        // Place the action in an ActionStrip in the header, which is allowed while driving.
+        val actionStrip = ActionStrip.Builder()
+            .addAction(serviceAction)
             .build()
 
-        return PaneTemplate.Builder(paneBuilder.build())
-            .setHeader(header)
+        return LongMessageTemplate.Builder(message)
+            .setTitle("Tour Guide")
+            .setHeaderAction(Action.APP_ICON)
+            .setActionStrip(actionStrip)
             .build()
     }
 
@@ -142,8 +109,8 @@ class MainScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycleO
             startService()
         } else {
             CarToast.makeText(carContext, "Requesting permissions on phone...", CarToast.LENGTH_LONG).show()
-            carContext.requestPermissions(missingPermissions) { granted, rejected ->
-                if (granted.contains(Manifest.permission.ACCESS_FINE_LOCATION) || 
+            carContext.requestPermissions(missingPermissions) { granted, _ ->
+                if (granted.contains(Manifest.permission.ACCESS_FINE_LOCATION) ||
                     granted.contains(Manifest.permission.ACCESS_COARSE_LOCATION)) {
                     startService()
                 } else {

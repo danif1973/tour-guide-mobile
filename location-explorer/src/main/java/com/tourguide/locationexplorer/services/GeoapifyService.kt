@@ -56,19 +56,32 @@ class GeoapifyService(
             Log.w(TAG, "No categories configured for Geoapify search.")
             return@withContext emptyList()
         }
-        
-        val url = "${BASE_URL}?categories=${categories.joinToString(",")}&filter=circle:$lng,$lat,$radiusM&limit=${config.maxResults * 2}&apiKey=${config.geoapifyApiKey}"
-        Log.i(TAG, "Searching Geoapify: $lat, $lng radius=$radiusM")
-        Log.i(TAG, "URL: $url")
 
-        try {
-            val rawPlaces = executeGeoapifyQuery(url)
-            Log.i(TAG, "Query Result: $rawPlaces")
-            if (rawPlaces.isNotEmpty()) {
-                return@withContext processor.processPlaces(rawPlaces, lat, lng)
+        val speedMultiplier = speedKmh / DEFAULT_SPEED_REFERENCE_BASELINE
+        var currentRadius = (radiusM * speedMultiplier).toInt().coerceAtLeast(200)
+            .coerceAtMost(config.maxRadiusM)
+
+        for (attempt in 0 until config.maxRadiusRetries) {
+            Log.i(TAG, "Searching Geoapify: $lat, $lng radius=$currentRadius (Attempt ${attempt + 1})")
+
+            val url = "${BASE_URL}?categories=${categories.joinToString(",")}&filter=circle:$lng,$lat,$currentRadius&limit=${config.maxResults * 2}&apiKey=${config.geoapifyApiKey}"
+
+            try {
+                val rawPlaces = executeGeoapifyQuery(url)
+                if (rawPlaces.isNotEmpty()) {
+                    val processedPlaces = processor.processPlaces(rawPlaces, lat, lng)
+                    if (processedPlaces.isNotEmpty()) {
+                        return@withContext processedPlaces
+                    }
+                }
+
+                currentRadius = (currentRadius * 1.5).toInt().coerceAtMost(config.maxRadiusM)
+                if (attempt < config.maxRadiusRetries - 1) delay((config.radiusRetryDelay * 1000).toLong())
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching from Geoapify", e)
+                break // Stop on error
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching from Geoapify", e)
         }
 
         return@withContext emptyList()

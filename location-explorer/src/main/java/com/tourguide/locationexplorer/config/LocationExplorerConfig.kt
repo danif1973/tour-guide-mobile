@@ -9,6 +9,9 @@ import com.tourguide.locationexplorer.BuildConfig
  */
 object LocationExplorerConfig {
     private const val TAG = "LocationExplorerConfig"
+
+    // App Behavior
+    var blockPhoneUiWhenConnectedToCar: Boolean = false
     
     // Gemini API Configuration
     var geminiApiKey: String? = null
@@ -36,28 +39,13 @@ object LocationExplorerConfig {
         }
     
     // API Configuration
-    var defaultLanguage: String = "en"
+    //var defaultLanguage: String = "en"
+    //var defaultLanguage: String = "de"
+    var defaultLanguage: String = "he"
     
     // Maximum sentences for OSM place summaries
     var defaultMaxSentences: Int = 7
-    
-    // Text-to-Speech (TTS) Configuration
-    var enableAudioGeneration: Boolean = true
-    var ttsLanguage: String = "en"
-    var ttsSlow: Boolean = false
-    var ttsTld: String = "com" // Top-level domain (affects accent/pronunciation) - gTTS only
-    
-    // TTS Provider Selection
-    var ttsProvider: String = "android-tts" // "gtts", "edge-tts", or "android-tts"
-    
-    // Edge TTS Configuration (for reference, Android uses TextToSpeech)
-    var ttsVoice: String = "en-US-EmmaMultilingualNeural"
-    var ttsRate: String = "+10%" // Speech rate: -50% to +100%
-    var ttsPitch: String = "-10Hz" // Pitch: -50Hz to +50Hz
-    var ttsVolume: String = "-10%" // Volume: -50% to +100%
-    var ttsStyle: String = "cheerful" // Style: "cheerful", "friendly", "sad", "angry", "excited", "calm", etc.
-    var ttsStyleDegree: Float = 1.0f // Style intensity: 0.01 to 2.0 (default: 1.0)
-    
+
     // Prompt for summarizing a single place from OSM data
     val osmPlaceSystemPrompt: String = """
         You are a knowledgeable tour guide assistant.
@@ -126,13 +114,7 @@ object LocationExplorerConfig {
     
     // Delay in seconds between retry attempts when expanding radius
     var radiusRetryDelay: Float = 1.0f
-    
-    // Maximum Nominatim calls to prevent timeout (performance optimization)
-    var maxNominatimCalls: Int = 20
-    
-    // Skip Nominatim calls for testing (uses OSM promise score only)
-    var skipNominatimCalls: Boolean = true
-    
+
     // Place Types to Search
     val tourismTypes: List<String> = listOf(
         "attraction", "museum", "monument", "memorial", "viewpoint", "gallery", "theme_park", "zoo", "park"
@@ -153,11 +135,7 @@ object LocationExplorerConfig {
     val placeTypes: List<String> = listOf(
         "city", "state", "town", "village", "suburb", "square"
     )
-    
-    // Overpass Filtering Configuration
-    // Generic filters to exclude unwanted places based on OSM tag combinations
-    val overpassFilters: List<String> = emptyList()
-    
+
     // Place History Configuration
     // TTL for place history in seconds (to avoid returning same places in subsequent queries)
     var placeHistoryTtl: Int = 86400 // 24 hours default

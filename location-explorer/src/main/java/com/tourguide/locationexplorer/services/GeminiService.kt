@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.text.Regex
 
@@ -53,45 +54,7 @@ class GeminiService(
         
         Log.d(TAG, "Initialized Gemini service with model: ${config.geminiModel}")
     }
-    
-    /**
-     * Reverse geocode coordinates to get address/location name.
-     */
-    suspend fun reverseGeocode(lat: Double, lng: Double): String = withContext(Dispatchers.IO) {
-        try {
-            val url = "https://nominatim.openstreetmap.org/reverse?lat=$lat&lon=$lng&format=json&accept-language=en&addressdetails=1"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("User-Agent", "Location-Explorer/1.0")
-                .addHeader("Accept", "application/json")
-                .build()
-            
-            delay(100) // Rate limiting
-            
-            val response = okHttpClient.newCall(request).execute()
-            
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: return@withContext "Location at $lat, $lng (geocoding failed)"
-                val data = json.decodeFromString<Map<String, Any>>(body)
-                
-                val locationName = data["display_name"] as? String
-                if (locationName != null) {
-                    Log.d(TAG, "Reverse geocoded to: $locationName")
-                    return@withContext locationName
-                } else {
-                    Log.w(TAG, "No display_name found in reverse geocoding response")
-                    return@withContext "Unknown location at $lat, $lng"
-                }
-            } else {
-                Log.e(TAG, "Reverse geocoding request failed with status ${response.code}")
-                return@withContext "Location at $lat, $lng (geocoding failed)"
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Reverse geocoding error: ${e.message}", e)
-            return@withContext "Location at $lat, $lng (geocoding error)"
-        }
-    }
-    
+
     /**
      * Refine OSM place data to minimal identification fields.
      */
@@ -121,6 +84,7 @@ class GeminiService(
      */
     private fun createOsmSummaryPrompt(
         refinedOsm: Map<String, Any>,
+        language: String,
         maxSentences: Int = config.defaultMaxSentences
     ): String {
         // Build JSON string manually for simplicity
@@ -140,6 +104,18 @@ class GeminiService(
             part.replace("{place_json}", placeJson)
                 .replace("{max_sentences}", maxSentences.toString())
         })
+
+        // Add the language instruction if it's not the default English
+        if (language.lowercase() != "en") {
+            try {
+                val languageName = Locale.forLanguageTag(language).displayLanguage
+                if (languageName.isNotBlank()) {
+                    promptParts.add("Please provide the response in $languageName.")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not determine display name for language code: $language")
+            }
+        }
         
         return promptParts.joinToString("\n")
     }
@@ -226,18 +202,20 @@ class GeminiService(
      */
     suspend fun generateOsmSummary(
         place: Map<String, Any>,
-        language: String = "en",
         maxSentences: Int = config.defaultMaxSentences
     ): String? = withContext(Dispatchers.IO) {
         val tags = (place["tags"] as? Map<String, String>) ?: emptyMap()
         val placeName = tags["name"] ?: "Unknown"
-        Log.d(TAG, "Generating OSM summary for place: $placeName")
+        val language = config.defaultLanguage // Use language from config
+        
+        Log.d(TAG, "Generating OSM summary for place: $placeName in language: $language")
         
         // Refine OSM data
         val refinedOsm = refineOsmData(place)
         
-        // Create prompt
-        val promptText = createOsmSummaryPrompt(refinedOsm, maxSentences)
+        // Create prompt with language instruction
+        val promptText = createOsmSummaryPrompt(refinedOsm, language, maxSentences)
+        Log.d(TAG, "Prompt text: $promptText")
         
         var response: GenerateContentResponse? = null
         

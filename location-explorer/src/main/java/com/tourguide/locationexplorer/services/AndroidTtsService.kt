@@ -61,6 +61,9 @@ class AndroidTtsService : TtsService, TextToSpeech.OnInitListener {
             
             tts?.setAudioAttributes(audioAttributes)
             
+            // Set speech rate to normal
+            tts?.setSpeechRate(1.1f)
+            
             // Set listener to manage focus release
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
@@ -95,6 +98,7 @@ class AndroidTtsService : TtsService, TextToSpeech.OnInitListener {
                 Log.w(TAG, "Failed to set language: $language", e)
             }
         }
+        Log.w(TAG, "Starting text narration in $language")
         speak(text, TextToSpeech.QUEUE_ADD)
     }
     

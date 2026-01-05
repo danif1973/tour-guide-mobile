@@ -2,11 +2,7 @@ package com.tourguide.locationexplorer.services
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
-import android.util.Log
 import com.tourguide.locationexplorer.config.LocationExplorerConfig
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.util.Locale
 
 /**
  * Text-to-Speech service interface.
@@ -24,17 +20,17 @@ interface TtsService {
      * Generate audio from text and return as byte array.
      * Note: Android TTS doesn't directly export audio bytes, so this may return null.
      * @param text Text to convert to speech
-     * @param language Language code (default: "en")
+     * @param language Language code (default: from LocationExplorerConfig)
      * @return Byte array of audio data, or null if not supported/available
      */
-    suspend fun generateAudio(text: String, language: String = "en"): ByteArray?
+    suspend fun generateAudio(text: String, language: String = LocationExplorerConfig.defaultLanguage): ByteArray?
     
     /**
      * Speak text using TTS.
      * @param text Text to speak
-     * @param language Language code (default: "en")
+     * @param language Language code (default: from LocationExplorerConfig)
      */
-    fun speak(text: String, language: String = "en")
+    fun speak(text: String, language: String = LocationExplorerConfig.defaultLanguage)
 
     /**
      * Speak text using TTS with specific queue mode.
