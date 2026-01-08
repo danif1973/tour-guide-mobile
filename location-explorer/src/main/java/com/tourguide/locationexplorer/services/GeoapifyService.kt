@@ -88,19 +88,32 @@ class GeoapifyService(
     }
 
     private suspend fun executeGeoapifyQuery(url: String): List<Map<String, Any>> {
-        val request = Request.Builder().url(url).build()
-        val response = okHttpClient.newCall(request).execute()
+        for (i in 1..3) {
+            try {
+                val request = Request.Builder().url(url).build()
+                val response = okHttpClient.newCall(request).execute()
 
-        if (!response.isSuccessful) {
-            Log.e(TAG, "Geoapify request failed: ${response.code}")
-            return emptyList()
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Geoapify request failed: ${response.code}")
+                    // Don't retry on client or server errors, only on exceptions
+                    return emptyList()
+                }
+
+                val body = response.body?.string() ?: return emptyList()
+                val jsonResponse = json.decodeFromString<JsonObject>(body)
+                val features = jsonResponse["features"]?.jsonArray ?: return emptyList()
+
+                return features.mapNotNull { feature -> parseGeoapifyFeature(feature.jsonObject) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Geoapify query failed on attempt $i due to: ${e.message}")
+                if (i == 3) {
+                    Log.e(TAG, "Geoapify query permanently failed after 3 attempts.")
+                    throw e // Re-throw the exception after the final attempt
+                }
+                delay(3000) // 3-second delay before retrying
+            }
         }
-
-        val body = response.body?.string() ?: return emptyList()
-        val jsonResponse = json.decodeFromString<JsonObject>(body)
-        val features = jsonResponse["features"]?.jsonArray ?: return emptyList()
-
-        return features.mapNotNull { feature -> parseGeoapifyFeature(feature.jsonObject) }
+        return emptyList() // Should not be reached if loop is correct
     }
 
     private fun parseGeoapifyFeature(feature: JsonObject): Map<String, Any>? {

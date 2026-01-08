@@ -194,9 +194,6 @@ class TourGuideActivity : AppCompatActivity() { // Must inherit from AppCompatAc
 
         controller.register { contentList ->
             runOnUiThread {
-                // Append new content with timestamp instead of clearing
-                val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-                contentTextView.append("\n--- Update ($timestamp) ---\n")
                 contentList.forEach { item ->
                     appendContent("• $item")
                 }

@@ -39,12 +39,16 @@ object LocationExplorerConfig {
         }
     
     // API Configuration
-    //var defaultLanguage: String = "en"
-    //var defaultLanguage: String = "de"
     var defaultLanguage: String = "he"
+//    var defaultLanguage: String = "en"
+//    var defaultLanguage: String = "de"
     
     // Maximum sentences for OSM place summaries
     var defaultMaxSentences: Int = 7
+
+    // Text-to-Speech (TTS) Configuration
+    var ttsPitch: Float = 1.0f
+    var ttsRate: Float = 1.1f
 
     // Prompt for summarizing a single place from OSM data
     val osmPlaceSystemPrompt: String = """
